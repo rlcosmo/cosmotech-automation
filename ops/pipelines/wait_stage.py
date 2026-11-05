@@ -14,8 +14,12 @@ assert re.fullmatch(r'[0-9]+', run_id) and re.fullmatch(r'[0-9]+', attempt)
 assert re.fullmatch(r'[a-z_]+', stage)
 url = f'http://127.0.0.1:8094/{app}/{run_id}/{attempt}'
 for _ in range(360):
-    with urllib.request.urlopen(url, timeout=5) as response:
-        record = json.load(response)
+    try:
+        with urllib.request.urlopen(url, timeout=5) as response:
+            record = json.load(response)
+    except (OSError, ValueError):
+        time.sleep(5)
+        continue
     current = record.get('stages', {}).get(stage, {})
     status = current.get('state', 'pending')
     if status == 'success':
