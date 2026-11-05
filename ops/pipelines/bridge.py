@@ -61,6 +61,22 @@ def save(path: Path, value: dict) -> None:
     temporary.replace(path)
 
 
+def inherited_success(app: str, run: str, attempt: str, sha: str) -> dict:
+    """Reuse recorded successful prerequisites of the same GitHub run/SHA on failed-job retries."""
+    stages = {}
+    previous = sorted(ROOT.glob(f'{app}-{run}-*.json'), key=lambda p: int(p.stem.rsplit('-', 1)[1]))
+    for path in previous:
+        value = json.loads(path.read_text())
+        if value['sha'] != sha or int(value['attempt']) >= int(attempt):
+            continue
+        for stage in STAGES[app]:
+            evidence = value.get('stages', {}).get(stage, {})
+            if evidence.get('state') != 'success':
+                break
+            stages[stage] = {**evidence, 'inherited_from_attempt': value['attempt']}
+    return stages
+
+
 def record(app: str, run: str, attempt: str, sha: str, stage: str, state: str) -> dict:
     validate(app, run, attempt, sha, stage, state)
     ROOT.mkdir(parents=True, exist_ok=True)
@@ -79,7 +95,7 @@ def record(app: str, run: str, attempt: str, sha: str, stage: str, state: str) -
                 raise ValueError('Commit mismatch for existing pipeline execution')
         else:
             value = {'app': app, 'run_id': run, 'attempt': attempt, 'sha': sha,
-                     'cluster': 'argocd-management-k3s' if app == 'gitops' else 'aws-eks-istio-lab-dev', 'state': 'running', 'stages': {},
+                     'cluster': 'argocd-management-k3s' if app == 'gitops' else 'aws-eks-istio-lab-dev', 'state': 'running', 'stages': inherited_success(app, run, attempt, sha),
                      'url': f'https://github.com/rlcosmo/{APPS[app]}/actions/runs/{run}/attempts/{attempt}'}
         value = evolve(value, stage, state, now)
         if not value.get('execution_id'):

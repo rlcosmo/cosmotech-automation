@@ -63,3 +63,17 @@ class PipelineEvidenceTests(unittest.TestCase):
                 bridge.record('orders-api','123','1','b'*40,'tests','success')
             value=json.loads((Path(directory)/'orders-api-123-1.json').read_text())
             self.assertEqual(value['sha'], 'a'*40)
+
+
+class RetryEvidenceTests(unittest.TestCase):
+    def test_failed_job_retry_reuses_only_proven_same_run_prerequisites(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(bridge, 'ROOT', Path(directory)), patch.object(bridge, 'request', return_value={'id':'execution'}):
+            for stage in ('tests','build_scan','publish'):
+                bridge.record('orders-api','123','1','a'*40,stage,'success')
+            bridge.record('orders-api','123','1','a'*40,'gitops','failure')
+            bridge.record('orders-api','123','2','a'*40,'gitops','running')
+            value=json.loads((Path(directory)/'orders-api-123-2.json').read_text())
+            self.assertEqual(value['stages']['tests']['inherited_from_attempt'],'1')
+            self.assertNotIn('rollout',value['stages'])
+            self.assertEqual(value['stages']['gitops']['state'],'running')
+            self.assertEqual(bridge.inherited_success('orders-api','123','3','b'*40),{})
