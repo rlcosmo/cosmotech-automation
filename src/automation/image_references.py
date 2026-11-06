@@ -49,6 +49,8 @@ def publication_resources(resources: dict, ecr=None) -> dict:
     for resource in result.values():
         if resource.get('kind') != 'Deployment':
             continue
+        # Owner-approved publication policy: one current ReplicaSet plus two old.
+        resource['spec']['revisionHistoryLimit'] = 2
         for container in resource['spec']['template']['spec']['containers']:
             image = container['image']
             match = REFERENCE.fullmatch(image)

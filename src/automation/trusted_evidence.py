@@ -89,6 +89,8 @@ def collect(request: dict, *, now: datetime, github, ecr, runtime, workflow_hash
     container['image'] = image
     container['env'] = [e for e in container.get('env', []) if e['name'] != 'RELEASE_VERSION'] + [
         {'name':'RELEASE_VERSION','value':request['digest']}]
+    # Fixed server-owned metadata policy, included before the signed manifest hash.
+    after['deployment.json']['spec']['revisionHistoryLimit']=2
     policy_before=copy.deepcopy(before)
     for name,resource in policy_before.items():
         original=after.get(name,{})
@@ -97,6 +99,7 @@ def collect(request: dict, *, now: datetime, github, ecr, runtime, workflow_hash
             annotations.pop('cosmotech.io/gmud-id',None)
             if not annotations:resource.get('metadata',{}).pop('annotations',None)
         if resource.get('kind')=='Deployment':
+            resource['spec']['revisionHistoryLimit']=2
             labels=resource['spec']['template'].get('metadata',{}).get('labels',{})
             source_labels=original['spec']['template'].get('metadata',{}).get('labels',{})
             if 'cosmotech.io/gmud-id' not in source_labels:labels.pop('cosmotech.io/gmud-id',None)

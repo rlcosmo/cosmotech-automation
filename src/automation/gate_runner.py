@@ -200,6 +200,11 @@ class Runtime:
             elif change['phase']=='ROLLED_BACK' and state.get('delivery',{}).get('phase')=='CANARY' and not state['delivery'].get('capacity_restored'):
                 from automation.canary_delivery import WorkerCanaryDelivery
                 result.append(WorkerCanaryDelivery(DeliveryRuntime(self,state)).tick())
+        if self.config.get('revision_history_limit') is not None:
+            from automation.history_retention import reconcile
+            try:result.extend(reconcile(self))
+            except (OSError,ValueError,PermissionError,RuntimeError) as error:
+                result.append({'retention':'blocked','reason':type(error).__name__})
         return {'reconciled':result,'scheduler_execution':identifier}
 
 

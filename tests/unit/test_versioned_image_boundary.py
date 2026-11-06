@@ -53,3 +53,21 @@ def test_wrong_alias_digest_blocks_even_when_ci_passed(release, monkeypatch):
     request, sources = sources_with_alias(release, monkeypatch, "sha256:" + "f" * 64)
     with pytest.raises(PermissionError, match="label"):
         collect(request, now=NOW, **sources)
+
+
+def test_ci_source_cannot_raise_protected_replica_set_retention(release, monkeypatch):
+    import json
+
+    request, sources = sources_with_alias(release, monkeypatch)
+    original = sources['github'].file.side_effect
+    def source(name, revision):
+        value = original(name, revision)
+        if name == 'deploy/dev/deployment.json':
+            resource = json.loads(value)
+            resource['spec']['revisionHistoryLimit'] = 100
+            value = json.dumps(resource).encode()
+        return value
+    sources['github'].file.side_effect = source
+    verified, bundle = collect(request, now=NOW, **sources)
+    assert bundle['resources']['deployment.json']['spec']['revisionHistoryLimit'] == 2
+    validate_bundle(verified, bundle)

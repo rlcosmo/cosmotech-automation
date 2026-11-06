@@ -1,0 +1,10 @@
+{
+  "schema": "cosmotech-replicaset-retention-v1",
+  "scope": "application Deployments published by the controlled GitOps flow",
+  "revisionHistoryLimit": 2,
+  "steadyStateReplicaSetsPerDeployment": 3,
+  "existingResources": "reconcile through the pinned Kestra scheduler and exclusive signed publisher",
+  "cleanup": "Kubernetes Deployment controller; never manually delete active ReplicaSets",
+  "preserve": ["pod template", "image", "replicas", "HPA", "Canary strategy", "GMUD approvals", "12h rollback"],
+  "caveat": "Rollouts must complete before automatic cleanup; count can temporarily exceed three"
+}
