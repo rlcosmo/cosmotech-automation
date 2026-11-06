@@ -15,6 +15,15 @@ from automation.promotion_runtime import CanaryExecutor
 from automation.worker_canary import CanaryController
 
 
+def freeze_approved_capacity(resources: dict) -> None:
+    """Freeze at the approved minimum, preserving capacity across Canary phases."""
+    spec=resources['hpa.json']['spec']
+    minimum,maximum=spec['minReplicas'],spec['maxReplicas']
+    if type(minimum) is not int or type(maximum) is not int or not 1<=minimum<=maximum<=4:
+        raise PermissionError('Capacidade HPA fora dos limites aprovados')
+    spec.update(minReplicas=minimum,maxReplicas=minimum)
+
+
 class WorkerCanaryDelivery:
     def __init__(self, delivery):
         self.delivery=delivery
@@ -63,7 +72,7 @@ class WorkerCanaryDelivery:
             if env['name']=='WORKER_CONTROL_FILE':env['value']='/etc/cosmotech/control/lease.json'
         pod['spec']['volumes']=[v for v in pod['spec']['volumes'] if v['name']!='stable-control']+[{'name':'canary-control','configMap':{'name':'orders-worker-canary-control'}}]
         container['volumeMounts']=[v for v in container['volumeMounts'] if v['name']!='stable-control']+[{'name':'canary-control','mountPath':'/etc/cosmotech/control','readOnly':True}]
-        stable['hpa.json']['spec'].update(minReplicas=1,maxReplicas=1)
+        freeze_approved_capacity(stable)
         stable.update({'canary-deployment.json':canary,'canary-control.json':{'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':'orders-worker-canary-control','namespace':'orders-worker'},'data':{'lease.json':'{"mode":"drain","expires_at":0}'}}})
         revision=self.delivery.controlled().publish(self.delivery.identity,'canary:prepare',stable,expected_digest=self.release['current_digest'])
         self.delivery.state['delivery']={'phase':'CANARY','revision':revision,'bootstrap':False}
@@ -83,7 +92,7 @@ class WorkerCanaryDelivery:
         if digest==self.release['digest']:
             resources=copy.deepcopy(self.delivery.state['bundle']['resources'])
             resources['deployment.json'],resources['stable-control.json']=stable_control(resources['deployment.json'],digest)
-            resources['hpa.json']['spec'].update(minReplicas=1,maxReplicas=1)
+            freeze_approved_capacity(resources)
             revision=self.delivery.controlled().publish(self.delivery.identity,'promote:canary',resources,expected_digest=self.release['current_digest'])
         else:
             self.delivery.drain_worker()

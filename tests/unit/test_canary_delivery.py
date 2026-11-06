@@ -15,7 +15,7 @@ def fixture_delivery(release,monkeypatch):
     dep['metadata']['labels']={'app':'orders-worker'}
     dep['spec']['selector']={'matchLabels':{'app':'orders-worker'}}
     dep['spec']['template']['metadata']={'labels':{'app':'orders-worker'}}
-    bundle['resources']['hpa.json']['spec']={}
+    bundle['resources']['hpa.json']['spec']={'minReplicas':1,'maxReplicas':4}
 
     before=copy.deepcopy(bundle['resources'])
     before['deployment.json']['spec']['template']['spec']['containers'][0]['image']=before['deployment.json']['spec']['template']['spec']['containers'][0]['image'].split('@')[0]+'@'+release['current_digest']
@@ -99,3 +99,35 @@ def test_terminal_rollout_reconciles_effect_without_querying_removed_pods(releas
     binding.tick()
     binding.observation.assert_not_called();binding.controller.step.assert_not_called()
     if stage=='COMPLETE':binding.delivery.observing.assert_called_once()
+
+
+def test_two_replica_baseline_is_not_reduced_during_canary_preparation(release,monkeypatch):
+    binding,bundle,before=fixture_delivery(release,monkeypatch)
+    before['hpa.json']['spec'].update(minReplicas=2,maxReplicas=2)
+    binding.queue=Mock(return_value={'dlq':0,'visible':0,'inflight':0})
+    binding.controller=Mock();binding.executor=Mock()
+    binding.start(bundle,{'receipt':'test'})
+    published=binding.delivery.controlled.return_value.publish.call_args.args[2]
+    assert published['hpa.json']['spec']['minReplicas']==2
+    assert published['hpa.json']['spec']['maxReplicas']==2
+    assert published['deployment.json']==before['deployment.json']
+
+
+def test_promoted_candidate_uses_approved_two_replica_capacity(release,monkeypatch):
+    binding,bundle,before=fixture_delivery(release,monkeypatch)
+    bundle['resources']['hpa.json']['spec'].update(minReplicas=2,maxReplicas=2)
+    binding.rt.kube.deployment.return_value=before['deployment.json']
+    binding.delivery.state['delivery']={}
+    binding.promote(binding.identity,release['digest'],'promotion')
+    published=binding.delivery.controlled.return_value.publish.call_args.args[2]
+    assert published['hpa.json']['spec']['minReplicas']==2
+    assert published['hpa.json']['spec']['maxReplicas']==2
+    assert published['deployment.json']['spec']['template']['spec']['containers'][0]['image'].endswith('@'+release['digest'])
+
+
+def test_invalid_capacity_is_rejected_before_any_canary_publication(release,monkeypatch):
+    binding,bundle,before=fixture_delivery(release,monkeypatch)
+    before['hpa.json']['spec'].update(minReplicas=0,maxReplicas=2)
+    binding.queue=Mock(return_value={'dlq':0,'visible':0,'inflight':0})
+    with pytest.raises(PermissionError):binding.start(bundle,{})
+    binding.delivery.controlled.assert_not_called()
