@@ -6,7 +6,6 @@ function. Kestra must consume the bound decision through the deterministic gate.
 
 from __future__ import annotations
 
-import html
 import json
 import re
 import sqlite3
@@ -14,7 +13,8 @@ import urllib.parse
 from collections.abc import Callable
 from datetime import UTC, datetime
 
-from automation.promotion_gate import CRITICALITY, instant, release_id
+from automation.portal_view import confirmation, csp, render
+from automation.promotion_gate import instant, release_id
 from automation.promotion_identity import authenticated_human, challenge
 
 
@@ -63,22 +63,22 @@ class ApprovalPortal:
         def reply(code, body, authenticate=False):
             headers = [("Content-Type", "text/html; charset=utf-8"), ("Cache-Control", "no-store"),
                        ("X-Content-Type-Options", "nosniff"), ("X-Frame-Options", "DENY"),
-                       ("Content-Security-Policy", "default-src 'none'; form-action 'self'; frame-ancestors 'none'")]
+                       ("Content-Security-Policy", csp())]
             if authenticate:
                 headers.append(("WWW-Authenticate", 'Basic realm="CosmoTech approval", charset="UTF-8"'))
             start_response(code, headers)
             return [body.encode()]
         match = re.fullmatch(r"/releases/([a-f0-9]{64})(/rollback)?", environ.get("PATH_INFO", ""))
         if not match:
-            return reply("404 Not Found", "Not found")
+            return reply("404 Not Found", "Página não encontrada")
         identity = match[1]
         rollback = match[2] is not None
         action = "rollback" if rollback else "approve"
         with sqlite3.connect(self.database) as db:
             row = db.execute("SELECT release,advice FROM approval_requests WHERE id=?", (identity,)).fetchone()
         if not row:
-            return reply("404 Not Found", "Not found")
-        release, advice = map(json.loads, row)
+            return reply("404 Not Found", "Página não encontrada")
+        release, _advice = map(json.loads, row)
         with sqlite3.connect(self.database) as db:
             context_row = db.execute("SELECT context FROM approval_context WHERE id=?", (identity,)).fetchone()
         context = json.loads(context_row[0]) if context_row else {}
@@ -86,7 +86,7 @@ class ApprovalPortal:
         authorization = environ.get("HTTP_AUTHORIZATION", "")
         method = environ.get("REQUEST_METHOD")
         if method not in {"GET", "POST"}:
-            return reply("405 Method Not Allowed", "Method not allowed")
+            return reply("405 Method Not Allowed", "Método não permitido")
         if method == "GET":
             # Authenticate even reads; no public release metadata or token-only approvals.
             csrf = challenge(release, self.key, now, action=action)
@@ -95,41 +95,20 @@ class ApprovalPortal:
                     key=self.key, result="REJECT", now=now, allowed_principals=self.allowed,
                     authenticate=self.authenticate, action=action)
             except (PermissionError, OSError):
-                return reply("401 Unauthorized", "Authentication required", True)
-            esc = lambda value: html.escape(str(value), quote=True)
-            assessment = ("Bedrock disabled; deterministic policy and human review apply."
-                          if advice is None else
-                          "AI advisory: " + advice["recommendation"] + " — " + advice["justification"])
-            body = (f"<h1>Review {esc(release['service'])}</h1>"
-                    f"<p>{esc(context.get('criticality', CRITICALITY[release['service']]))} / {esc(release['environment'])}</p>"
-                    f"<p>Commit: {esc(release['commit'])}</p><p>Current: {esc(release['current_digest'])}</p>"
-                    f"<p>Candidate: {esc(release['digest'])}</p>"
-                    f"<p>{esc(assessment)}</p>"
-                    f'<form method="post"><input type="hidden" name="csrf" value="{esc(csrf)}">'
-                    '<button name="result" value="APPROVE">Approve this release</button>'
-                    '<button name="result" value="REJECT">Reject</button></form>')
-            if context.get('change_id'):
-                body = (f"<p>GMUD GLPI: {esc(context['change_id'])} | State: {esc(context.get('phase'))}</p>"
-                        f'<p><a href="https://glpi.cosmotechsolutions.com.br/front/change.form.php?id={esc(context["change_id"])}">Open native GMUD</a></p>' + body)
-            if not rollback and (context.get('phase') not in {None,'CREATED','HUMAN_REVIEW'} or context.get('decision')=='APPROVE'):
-                body=body[:body.find('<form')]+"<p>No human approval action is pending for this state.</p>"
-                if context.get('phase')=='OBSERVING':
-                    body+=f'<p><a href="/releases/{identity}/rollback">Request controlled rollback</a></p>'
-            if rollback:
-                if (context.get("phase") != "OBSERVING" or not context.get("rollback_until")
-                        or now >= instant(context["rollback_until"])):
-                    return reply("409 Conflict", "Rollback window unavailable. Request a new GMUD or manual analysis.")
-                body = (f"<h1>Request rollback: {esc(release['service'])}</h1>"
-                        f"<p>GMUD {esc(context.get('change_id'))}; deadline {esc(context['rollback_until'])}</p>"
-                        '<p>This records a request. Kestra verifies current version and executes the controlled rollback.</p>'
-                        f'<form method="post"><input type="hidden" name="csrf" value="{esc(csrf)}">'
-                        '<label>Justification <textarea name="reason" minlength="8" maxlength="2000" required></textarea></label>'
-                        '<button name="result" value="APPROVE">Request controlled rollback</button></form>')
+                return reply("401 Unauthorized", "Autenticação necessária", True)
+            if rollback and (context.get('rollback_eligible') is not True or context.get('phase')!='OBSERVING' or not context.get('rollback_until')
+                    or now>=instant(context['rollback_until']) or self.rollback_request(identity)):
+                return reply('409 Conflict','Janela de rollback indisponível. Consulte o estado ou solicite nova GMUD.')
+            recorded=self.decision(identity)
+            if context.get('phase')=='HUMAN_REVIEW' and recorded is not None:
+                context={**context,'phase':'DECISION_RECORDED','events':list(context.get('events') or [])+[{'type':'decision_recorded','at':recorded['timestamp'],'details':{'principal':recorded['principal']}}]}
+            body=render(release,context,csrf,now=now,rollback=rollback,
+                        rollback_pending=self.rollback_request(identity) is not None)
             return reply("200 OK", body)
         if environ.get("HTTP_ORIGIN") != self.origin:
-            return reply("403 Forbidden", "Invalid request origin")
-        if not rollback and (context.get('phase') not in {None,'CREATED','HUMAN_REVIEW'} or context.get('decision')=='APPROVE'):
-            return reply('409 Conflict','This GMUD has no pending human approval action.')
+            return reply("403 Forbidden", "Origem da solicitação inválida")
+        if not rollback and (context.get('phase') != 'HUMAN_REVIEW' or context.get('decision')=='APPROVE'):
+            return reply('409 Conflict','Esta GMUD não possui aprovação humana pendente.')
         try:
             length = int(environ.get("CONTENT_LENGTH") or 0)
             if not 0 < length <= 8192:
@@ -142,7 +121,7 @@ class ApprovalPortal:
                 allowed_principals=self.allowed, authenticate=self.authenticate, action=action)
             if rollback:
                 if (fields['result'][0] != 'APPROVE' or not 8 <= len(fields['reason'][0].strip()) <= 2000
-                        or context.get('phase') != 'OBSERVING' or not context.get('rollback_until')
+                        or context.get('rollback_eligible') is not True or context.get('phase') != 'OBSERVING' or not context.get('rollback_until')
                         or now >= instant(context['rollback_until'])):
                     raise PermissionError('Rollback window or justification invalid')
                 record['reason'] = fields['reason'][0].strip()
@@ -150,13 +129,13 @@ class ApprovalPortal:
                     try:
                         db.execute('INSERT INTO portal_rollback_requests VALUES (?,?)', (identity, json.dumps(record)))
                     except sqlite3.IntegrityError:
-                        return reply('409 Conflict', 'A rollback request already exists; inspect its status.')
-                return reply('200 OK', 'Rollback requested. Kestra must validate authorization, deadline and current version.')
+                        return reply('409 Conflict', 'Já existe uma solicitação de rollback. Consulte seu estado.')
+                return reply('200 OK', confirmation('Rollback solicitado. O Kestra verificará autorização, prazo e versão atual.',identity))
             with sqlite3.connect(self.database) as db:
                 existing = db.execute("SELECT decision FROM human_approvals WHERE id=?", (identity,)).fetchone()
                 if existing and json.loads(existing[0])["result"] != record["result"]:
-                    return reply("409 Conflict", "A decision is already recorded")
+                    return reply("409 Conflict", "Uma decisão já foi registrada")
                 db.execute("INSERT OR IGNORE INTO human_approvals VALUES (?,?)", (identity, json.dumps(record)))
         except (ValueError, KeyError, PermissionError, OSError):
-            return reply("403 Forbidden", "Decision rejected")
-        return reply("200 OK", "Decision recorded. Kestra still validates the release before promotion.")
+            return reply("403 Forbidden", "Decisão não aceita")
+        return reply("200 OK", confirmation("Decisão registrada. O Kestra validará a release antes de promover.",identity))

@@ -40,7 +40,7 @@ def test_api_gmud_notifies_waits_then_only_consumes_authenticated_record(tmp_pat
     assert result['decision']=='HUMAN_REVIEW'
     record=journal.read(change_identity(release))
     assert record['phase']=='HUMAN_REVIEW'
-    notifier.send.assert_called_once_with(release,None,change_id=record['change_id'])
+    notifier.send.assert_called_once_with(release,None,change_id=record['change_id'],rcl_id=record['rcl_id'],application_version=record['application_version'])
     publisher.publish.assert_not_called()
     portal.decision.return_value=human(release)
     coordinator.complete(release,bundle,None,now=NOW)

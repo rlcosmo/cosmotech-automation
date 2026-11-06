@@ -30,7 +30,9 @@ def quality(observation: dict, *, candidate: str, now: datetime, replicas: int,
         age = (now - instant(observation["sampled_at"])).total_seconds()
         if not 0 <= age <= 90 or observation["version"] != candidate:
             return "ABORT", "stale_or_wrong_version_metrics"
+        missing_latency=observation["p95_seconds"] is None and observation["canary_success"]==0
         for field in REQUIRED - {"version", "sampled_at", "stable_version", "draining", "stable_synced"}:
+            if field=="p95_seconds" and missing_latency:continue
             value = observation[field]
             if type(value) not in {float, int} or not math.isfinite(value) or value < 0:
                 return "ABORT", "invalid_metrics"
@@ -45,7 +47,7 @@ def quality(observation: dict, *, candidate: str, now: datetime, replicas: int,
             return "ABORT", "processing_persistence_or_ack_failure"
         if observation["dlq_visible"] > dlq_baseline:
             return "ABORT", "dlq_growth"
-        if observation["oldest_age_seconds"] > 120 or observation["p95_seconds"] > 5:
+        if observation["oldest_age_seconds"] > 120 or (not missing_latency and observation["p95_seconds"] > 5):
             return "ABORT", "latency_or_backlog_age"
         total = observation["canary_success"] + observation["canary_failure"] + observation["canary_ack_errors"]
         if total and observation["canary_retries"] / total > 0.10:
@@ -65,13 +67,14 @@ class CanaryController:
         with sqlite3.connect(database) as db:
             db.execute("CREATE TABLE IF NOT EXISTS rollouts (id TEXT PRIMARY KEY, state TEXT NOT NULL)")
             db.execute("CREATE TABLE IF NOT EXISTS rollout_events (id TEXT, event TEXT NOT NULL)")
+            db.execute("CREATE TABLE IF NOT EXISTS rollout_observations (id TEXT, generation INTEGER, observed_at TEXT, observation TEXT NOT NULL, PRIMARY KEY(id,generation))")
 
     def start(self, receipt: dict, release: dict, public_key: Any, *, now: datetime,
-              dlq_baseline: int = 0) -> dict:
+              dlq_baseline: int = 0, gmud_id: str | None = None) -> dict:
         verify_receipt(receipt, public_key, release, now=now)
         if release["service"] != "orders-worker" or type(dlq_baseline) is not int or dlq_baseline != 0:
             raise PermissionError("Worker only; clean queue/DLQ baseline required")
-        state = {"id": release_id(release), "stage": "CANARY_1", "generation": 1,
+        state = {"id": release_id(release), "gmud_id": gmud_id, "stage": "CANARY_1", "generation": 1,
                  "stable": release["current_digest"], "candidate": release["digest"],
                  "entered_at": now.isoformat(), "dlq_baseline": dlq_baseline,
                  "reason": "authorized_initial_canary",
@@ -98,6 +101,8 @@ class CanaryController:
             stage = state["stage"]
             if stage in {"COMPLETE", "ROLLED_BACK"}:
                 return state
+            db.execute("INSERT OR IGNORE INTO rollout_observations VALUES (?,?,?,?)",
+                       (identity,state["generation"],now.isoformat(),json.dumps(observation)))
             elapsed = (now - instant(state["entered_at"])).total_seconds()
             if stage in {"DRAIN_ROLLBACK", "DRAIN_PROMOTED"}:
                 # No scaling to zero until fresh pod evidence proves drain.

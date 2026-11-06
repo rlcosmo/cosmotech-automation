@@ -140,6 +140,7 @@ class ChangeJournal:
         self.database, self.glpi, self.key, self.policy = database, glpi, key, policy
         with self.db() as db:
             db.execute('CREATE TABLE IF NOT EXISTS gmud (id TEXT PRIMARY KEY, change_id INTEGER, state TEXT, record TEXT, pending TEXT)')
+            db.execute('CREATE TABLE IF NOT EXISTS rcl_allocations (number INTEGER PRIMARY KEY AUTOINCREMENT, identity TEXT NOT NULL UNIQUE)')
             db.execute('CREATE TABLE IF NOT EXISTS rollback_requests (id TEXT PRIMARY KEY, record TEXT, state TEXT)')
 
     def db(self):
@@ -149,7 +150,8 @@ class ChangeJournal:
 
     def encode(self, record: dict) -> str:
         envelope = {'cosmotech_gmud': record, 'signature': hmac.new(self.key, canonical(record), hashlib.sha256).hexdigest()}
-        return '<pre>' + html.escape(json.dumps(envelope, sort_keys=True)) + '</pre>'
+        heading = ('<h2>'+html.escape(record['title'])+'</h2><p>Identificador corporativo: '+record['rcl_id']+'</p><p>Plano de implantação: '+html.escape(record['execution_plan'])+'</p><p>Plano de rollback: '+html.escape(record['rollback_plan'])+'</p>' if record.get('rcl_id') else '')
+        return heading + '<pre>' + html.escape(json.dumps(envelope, sort_keys=True)) + '</pre>'
 
     def decode(self, change: dict) -> dict:
         parser = PreformattedRecords()
@@ -165,12 +167,17 @@ class ChangeJournal:
         if (record['id'] != change_identity(record['release']) or change.get('is_deleted') is not False
                 or change['status']['id'] != NATIVE_STATUS[record['phase']]):
             raise PermissionError('Native GLPI state and signed journal disagree')
+        if record.get('rcl_id') and (not re.fullmatch(r'RCL[0-9]{6,}',record['rcl_id']) or change['name'] != record['title']):
+            raise PermissionError('Identificador RCL ou título GLPI divergente')
         return dict(record, change_id=change['id'], native_status=change['status']['id'])
 
     def history(self) -> list[dict]:
         # Never use local SQLite as an authoritative substitute for GLPI history.
         rows = [self.decode(row) for row in self.glpi.all_changes()
-                if row.get('name', '').startswith('COSMOTECH GMUD ')]
+                if row.get('name', '').startswith('COSMOTECH GMUD ') or re.match(r'^RCL[0-9]{6,} \|',row.get('name',''))]
+        rcls=[row['rcl_id'] for row in rows if row.get('rcl_id')]
+        if len(set(rcls))!=len(rcls):
+            raise PermissionError('Identificadores corporativos duplicados no GLPI')
         if len({row['id'] for row in rows}) != len(rows):
             raise PermissionError('Duplicate release identities in GLPI; history is not auditable')
         with self.db() as db:
@@ -180,7 +187,7 @@ class ChangeJournal:
         return rows
 
     def ensure(self, release: dict, *, owner: str, ci_links: list[str],
-               implementation_plan: str, rollback_plan: str, now: datetime, synthetic: bool = False) -> dict:
+               implementation_plan: str, rollback_plan: str, now: datetime, synthetic: bool = False, application_version: str | None = None, current_version: str | None = None) -> dict:
         identity = change_identity(release)
         if not owner or not ci_links or not implementation_plan or not rollback_plan or type(synthetic) is not bool:
             raise ValueError('Incomplete mandatory GMUD metadata')
@@ -205,7 +212,12 @@ class ChangeJournal:
                 return current
             if row:
                 raise PermissionError('Ambiguous creation; reconcile GLPI before retry')
-            matches = [r for r in self.history() if r['id'] == identity]
+            history=self.history()
+            corporate=[int(r['rcl_id'][3:]) for r in history if r.get('rcl_id')]
+            allocated=db.execute('SELECT COALESCE(MAX(number),0) FROM rcl_allocations').fetchone()[0]
+            if corporate and max(corporate)>allocated:
+                raise PermissionError('Sequência local anterior ao GLPI; reconciliar backup antes de alocar')
+            matches = [r for r in history if r['id'] == identity]
             if len(matches) > 1:
                 raise PermissionError('Duplicate GMUD detected')
             if matches:
@@ -215,8 +227,16 @@ class ChangeJournal:
                 db.execute('INSERT INTO gmud VALUES (?,?,?,?,NULL)',
                            (identity, found['change_id'], 'ready', json.dumps({k:v for k,v in found.items() if k not in {'change_id','native_status'}})))
                 return found
+            # One committed allocation per release: a failed/ambiguous POST burns its number.
+            cursor=db.execute('INSERT INTO rcl_allocations(identity) VALUES (?)',(identity,))
+            rcl_id=f'RCL{cursor.lastrowid:06d}'
+            version=application_version or release['commit'][:12]
+            if not re.fullmatch(r'[A-Za-z0-9_.+-]{1,64}',version):
+                raise ValueError('Versão inválida')
+            record.update(rcl_id=rcl_id,application_version=version,current_version=current_version or release['current_digest'][:19],
+                          title=f"{rcl_id} | DEPLOY | {release['service'].upper()} | {release['environment'].upper()} | {version if version.startswith('v') else 'v'+version if re.match(r'^[0-9]+\.',version) else version}")
             db.execute('INSERT INTO gmud VALUES (?,NULL,?,?,NULL)', (identity, 'creating', json.dumps(record)))
-        identifier = self.glpi.create('COSMOTECH GMUD ' + identity, self.encode(record))
+        identifier = self.glpi.create(record['title'], self.encode(record))
         with self.db() as db:
             db.execute('UPDATE gmud SET change_id=?,state=? WHERE id=?', (identifier, 'ready', identity))
         return self.read(identity)

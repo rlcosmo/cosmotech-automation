@@ -210,5 +210,5 @@ def test_duplicate_signed_native_record_blocks_history(journal,release):
     duplicate=journal.glpi.get_change(created['change_id'])
     duplicate['id']=99
     journal.glpi.rows[99]=duplicate
-    with pytest.raises(PermissionError,match='Duplicate release identities'):
+    with pytest.raises(PermissionError,match='duplicados'):
         journal.history()

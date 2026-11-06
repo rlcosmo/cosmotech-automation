@@ -7,6 +7,7 @@ import sqlite3
 from datetime import datetime
 
 from automation.gitops_publisher import validate_bundle
+from automation.gmud_presentation import context_for
 from automation.promotion_gate import canonical, evaluate, release_id
 
 
@@ -32,9 +33,9 @@ class PromotionCoordinator:
             from automation.gmud import change_identity
             change = self.changes.ensure(release, owner=self.owner,
                 ci_links=["https://github.com/rlcosmo/cosmotech-" + release["service"] + "/actions/runs/" + release["run_id"]],
-                implementation_plan="Signed GitOps publisher; Argo exact revision and health; Worker Canary 1/2 with metrics.",
-                rollback_plan="Authenticated rollback within 12h, exact current digest check; Worker drain/inflight proof before restore.",
-                now=now)
+                implementation_plan="Publicação GitOps assinada, revisão exata e saúde no Argo CD; Worker Canary com métricas.",
+                rollback_plan="Rollback autenticado até12h, conferir digest atual e comprovar drenagem Worker antes de restaurar.",
+                now=now,application_version=bundle.get("application_version"),current_version=bundle.get("current_version"))
             decision, reason = self.changes.policy.decide(release, self.changes.history(), now=now)
             if change["phase"] not in {"CREATED", "HUMAN_REVIEW"}:
                 raise PermissionError("GMUD already dispatched, denied or requires reconciliation")
@@ -52,7 +53,7 @@ class PromotionCoordinator:
                 if old is None:
                     db.execute("INSERT INTO notifications VALUES (?,'dispatching',NULL)", (identity,))
             if old is None:
-                message_id = (self.notifier.send(release, advice, change_id=change["change_id"])
+                message_id = (self.notifier.send(release, advice, change_id=change["change_id"],rcl_id=change.get("rcl_id"),application_version=change.get("application_version"))
                               if change is not None else self.notifier.send(release, advice))
                 with sqlite3.connect(self.gate.database) as db:
                     db.execute("UPDATE notifications SET state='accepted',message_id=? WHERE id=?", (message_id, identity))
@@ -66,7 +67,7 @@ class PromotionCoordinator:
             if change is not None and str(error) == "human_decision":
                 self.changes.transition(change["id"], "REJECTED", now=now,
                     details={"reason": "authenticated_human_rejected", "principal": human["principal"]})
-                self.portal.set_context(identity,{"phase":"REJECTED","change_id":change["change_id"],"criticality":change["criticality"]})
+                self.portal.set_context(identity,context_for(self.changes.read(change["id"])))
             raise
         if change is not None:
             self.changes.transition(change["id"], "APPROVED", now=now,
@@ -74,7 +75,7 @@ class PromotionCoordinator:
                          "receipt_release_id": receipt["payload"]["release_id"],
                          "receipt_sha256": hashlib.sha256(canonical(receipt)).hexdigest(),
                          "evidence_observed_at": release["observed_at"]})
-            self.portal.set_context(identity,{"phase":"APPROVED","change_id":change["change_id"],"criticality":change["criticality"]})
+            self.portal.set_context(identity,context_for(self.changes.read(change["id"])))
         def dispatch(authorized):
             if change is not None:
                 self.changes.transition(change["id"], "DEPLOYING", now=now,

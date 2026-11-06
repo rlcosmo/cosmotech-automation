@@ -21,8 +21,10 @@ class ControlledPublisher:
         """Intent is consumed before push; exact application version is checked under lock."""
         change=self.changes.read(identity)
         allowed={'deploy':{'DEPLOYING'},'canary':{'DEPLOYING'},'promote':{'DEPLOYING'},
-                 'rollback':{'ROLLBACK_RUNNING','DEPLOYING'},'drain-complete':{'DEPLOYING','ROLLBACK_RUNNING'}}
+                 'rollback':{'ROLLBACK_RUNNING','DEPLOYING'},'drain-complete':{'DEPLOYING','ROLLBACK_RUNNING','ROLLED_BACK'}}
         operation=effect.split(':')[0]
+        if change['phase']=='ROLLED_BACK' and (effect!='drain-complete:rollback' or set(resources)!={'hpa.json'} or expected_digest!=change['release']['current_digest']):
+            raise PermissionError('Mudança revertida permite somente restaurar capacidade após drenagem')
         if operation not in allowed or change['phase'] not in allowed[operation]:
             raise PermissionError('GMUD does not authorize this operation')
         service=change['release']['service']
@@ -53,6 +55,12 @@ class ControlledPublisher:
                 if (not re.fullmatch(r'[0-9]{12}\.dkr\.ecr\.us-east-1\.amazonaws\.com/aws-eks-istio-lab-dev-'+re.escape(service)+r'(?::sha-[a-f0-9]{40})?@sha256:[a-f0-9]{64}',image)
                         or image.split('@')[-1] not in {change['release']['digest'],change['release']['current_digest']}):
                     raise PermissionError('Image escaped the approved application versions')
+        resources=json.loads(json.dumps(resources))
+        if change.get('rcl_id'):
+            for resource in resources.values():
+                resource['metadata'].setdefault('annotations',{})['cosmotech.io/gmud-id']=change['rcl_id']
+                if resource['kind']=='Deployment' and resource['spec']['template']['spec']['containers'][0]['image'].split('@')[-1]==change['release']['digest']:
+                    resource['spec']['template'].setdefault('metadata',{}).setdefault('labels',{})['cosmotech.io/gmud-id']=change['rcl_id']
         effect_id=hashlib.sha256(canonical({'gmud':identity,'effect':effect,'resources':resources,'expected':expected_digest})).hexdigest()
         with (self.git.repo/'.git'/'cosmotech-publisher.lock').open('a') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX)
@@ -85,7 +93,7 @@ class ControlledPublisher:
             if any(p.is_symlink() for p in [proof,*proof.parents] if p!=self.git.repo.parent):
                 raise PermissionError('Symlink evidence path')
             proof.parent.mkdir(parents=True,exist_ok=True)
-            proof.write_text(json.dumps({'application':service,'gmud_id':change['change_id'],
+            proof.write_text(json.dumps({'application':service,'gmud_id':change.get('rcl_id',change['change_id']),'glpi_change_id':change['change_id'],
                 'gmud_release_id':identity,'effect_id':effect_id,'effect':effect,
                 'kestra_execution_id':change['kestra_execution_id'],
                 'source_repository':'rlcosmo/cosmotech-'+service,
@@ -98,7 +106,7 @@ class ControlledPublisher:
                 raise PermissionError('Unexpected staged publication')
             self.git.git('-c','user.name=CosmoTech Promotion','-c','user.email=promotion@localhost',
                          '-c','user.signingkey='+self.git.fingerprint,'-c','commit.gpgsign=true',
-                         'commit','--quiet','-m',f'feat({service}): {operation} GMUD {change["change_id"]}')
+                         'commit','--quiet','-m',f'feat({service}): {operation} GMUD {change.get("rcl_id",change["change_id"])}')
             revision=self.git.git('rev-parse','HEAD')
             verify_commit(self.git.repo,revision,self.git.fingerprint,env=self.git.git_env)
             self.git.git('push','--quiet','origin','HEAD:main')

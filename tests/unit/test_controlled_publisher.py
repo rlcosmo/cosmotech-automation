@@ -40,7 +40,7 @@ def test_gmud_effect_scoped_cas_and_once_only(tmp_path,journal,release,monkeypat
     publisher.publish(identity,'deploy:bootstrap',bundle['resources'],expected_digest=release['current_digest'])
     assert sum(c.args[:1]==('push',) for c in fake.git.call_args_list)==1
     proof=json.loads((fake.repo/'gitops/releases/orders-worker-dev.json').read_text())
-    assert proof['gmud_id']==1 and proof['source_sha']==release['commit']
+    assert proof['gmud_id']=='RCL000001' and proof['glpi_change_id']==1 and proof['source_sha']==release['commit']
 
 
 def test_superseded_or_other_namespace_cannot_publish(tmp_path,journal,release,monkeypatch):
@@ -74,3 +74,13 @@ def test_stable_control_preserves_business_configuration_and_hpa_ownership(relea
     assert control['data']['mode']=='run'
     env=transformed['spec']['template']['spec']['containers'][0]['env']
     assert {'name':'RELEASE_VERSION','value':release['digest']} in env
+
+
+def test_terminal_rollback_cannot_publish_application_or_new_version(tmp_path,journal,release,monkeypatch):
+    publisher,bundle,identity,_fake=publisher_fixture(tmp_path,journal,release,monkeypatch)
+    record=journal.read(identity)
+    journal.transition(identity,'ROLLBACK_RUNNING',now=NOW,details={'reason':'isolated'})
+    journal.transition(identity,'ROLLED_BACK',now=NOW,details={'rollback_validated':True})
+    with pytest.raises(PermissionError):publisher.publish(identity,'drain-complete:rollback',bundle['resources'],expected_digest=release['current_digest'])
+    with pytest.raises(PermissionError):publisher.publish(identity,'deploy:replay',{'hpa.json':bundle['resources']['hpa.json']},expected_digest=release['current_digest'])
+    assert record['rcl_id']=='RCL000001'

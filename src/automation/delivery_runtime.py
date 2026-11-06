@@ -15,6 +15,7 @@ from automation.controlled_publisher import ControlledPublisher, stable_control
 from automation.gitops_publisher import validate_bundle
 from automation.gmud import change_identity
 from automation.gmud_observation import ObservationWindow
+from automation.gmud_presentation import context_for
 from automation.live_evidence import ssm_result
 from automation.promotion_gate import release_id, verify_receipt
 
@@ -40,10 +41,9 @@ class DeliveryRuntime:
     def snapshot(self):
         return self.rt.live.runtime(self.release['service'])
 
-    def context(self, change: dict):
+    def context(self, change: dict, *, rollback_eligible: bool = False):
         self.rt.portal.register(self.release,None)
-        self.rt.portal.set_context(release_id(self.release),{'phase':change['phase'],
-            'change_id':change['change_id'],'rollback_until':change['rollback_until'],'criticality':change['criticality']})
+        self.rt.portal.set_context(release_id(self.release),context_for(change,rollback_eligible=rollback_eligible,eligibility_observed_at=datetime.now(UTC).isoformat()))
 
     def validate(self, expected: str) -> dict:
         snapshot=self.snapshot()
@@ -58,7 +58,7 @@ class DeliveryRuntime:
         change=self.rt.changes.transition(self.identity,'OBSERVING',now=now,
             details={'technical_validation':True,'gitops_revision':snapshot['revision']})
         self.window.record(change,self.sample(snapshot,now),now=now)
-        self.context(change)
+        self.context(change,rollback_eligible=True)
         self.state['delivery']['phase']='OBSERVING'
         self.save()
 
@@ -84,7 +84,8 @@ class DeliveryRuntime:
         validate_bundle(release,bundle)
         rows=self.rt.kube.query('cosmotech_worker_heartbeat_timestamp_seconds{channel="stable",version="'+release['current_digest']+'"}')
         if rows:
-            raise PermissionError('Canary binding must be activated before a normal Worker release; no rolling bypass')
+            from automation.canary_delivery import WorkerCanaryDelivery
+            return WorkerCanaryDelivery(self).start(bundle,receipt)
         if receipt['payload']['approver'] not in set(self.rt.config['allowed_principals']):
             raise PermissionError('Initial telemetry bootstrap requires authenticated human review')
         resources=json.loads(json.dumps(bundle['resources']))
@@ -134,6 +135,20 @@ class DeliveryRuntime:
             time.sleep(5)
         raise PermissionError('Drain/inflight proof not obtained; preserve consumers for manual analysis')
 
+    def resume_restored_worker(self):
+        """Resume only after the previous image has an actual running restored pod."""
+        deadline=time.monotonic()+90
+        while time.monotonic()<deadline:
+            pods=self.rt.kube.request('/api/v1/namespaces/orders-worker/pods?labelSelector=app%3Dorders-worker')['items']
+            found=any(not pod['metadata'].get('deletionTimestamp') and any(
+                c['name']=='orders-worker' and c.get('imageID','').split('@')[-1]==self.release['current_digest']
+                and c.get('state',{}).get('running') for c in pod.get('status',{}).get('containerStatuses',[])) for pod in pods)
+            if found:
+                self.rt.kube.request('/api/v1/namespaces/orders-worker/configmaps/orders-worker-stable-control',body={'data':{'mode':'run'}},method='PATCH')
+                return
+            time.sleep(3)
+        raise PermissionError('Pod da versão restaurada não confirmado; manter drenagem e analisar')
+
     def rollback(self, *, reason: str, automatic=False):
         change=self.rt.changes.read(self.identity)
         if change['phase']=='DEPLOYING' and not automatic:raise PermissionError('Deployment is not in its responsible rollback window')
@@ -147,27 +162,32 @@ class DeliveryRuntime:
                                            expected_digest=self.release['digest'],restored_source_commit=self.state['bundle']['baseline_commit'])
         self.state['delivery'].update(phase='ROLLBACK_RUNNING',revision=revision)
         self.save()
+        if self.release['service']=='orders-worker':self.resume_restored_worker()
         self.sync(revision)
         snapshot=self.validate(self.release['current_digest'])
         change=self.rt.changes.transition(self.identity,'ROLLED_BACK',now=datetime.now(UTC),
             details={'rollback_validated':True,'gitops_revision':snapshot['revision'],'drain_proof':proof,'reason':reason})
         self.state['delivery']['phase']='ROLLED_BACK'
         self.save();self.context(change)
-        return {'change_id':change['change_id'],'phase':change['phase']}
+        return {'gmud_id':change.get('rcl_id'),'change_id':change['change_id'],'phase':change['phase']}
 
     def tick(self, change: dict):
         now=datetime.now(UTC)
         if change['phase']=='DEPLOYING':
             delivery=self.state.get('delivery',{})
+            if delivery.get('phase')=='CANARY':
+                from automation.canary_delivery import WorkerCanaryDelivery
+                return WorkerCanaryDelivery(self).tick()
             if delivery.get('phase')=='ROLLING':
                 # Reconcile an already recorded signed revision, never publish again.
                 self.sync(delivery['revision']);self.observing()
-                return {'change_id':change['change_id'],'phase':'OBSERVING'}
-            return {'change_id':change['change_id'],'phase':'RECONCILE_REQUIRED','reason':'No acknowledged delivery effect'}
+                return {'gmud_id':change.get('rcl_id'),'change_id':change['change_id'],'phase':'OBSERVING'}
+            return {'gmud_id':change.get('rcl_id'),'change_id':change['change_id'],'phase':'RECONCILE_REQUIRED','reason':'No acknowledged delivery effect'}
         if change['phase']=='ROLLBACK_REQUESTED':return self.rollback(reason='authenticated_responsible_request')
         if change['phase']=='ROLLBACK_RUNNING':
-            return {'change_id':change['change_id'],'phase':'RECONCILE_REQUIRED','reason':'Verify the recorded rollback revision; no blind replay'}
+            return {'gmud_id':change.get('rcl_id'),'change_id':change['change_id'],'phase':'RECONCILE_REQUIRED','reason':'Verify the recorded rollback revision; no blind replay'}
         snapshot=self.snapshot()
+        self.context(change,rollback_eligible=snapshot['image'].split('@')[-1]==self.release['digest'])
         request=self.rt.portal.rollback_request(release_id(self.release))
         if request is not None:
             self.rt.changes.request_rollback(self.identity,principal=request['principal'],reason=request['reason'],now=now,
@@ -179,4 +199,4 @@ class DeliveryRuntime:
             evidence=self.window.completion(change,now=now)
             change=self.rt.changes.transition(self.identity,'CLOSED_SUCCESS',now=now,details=evidence)
             self.context(change)
-        return {'change_id':change['change_id'],'phase':change['phase']}
+        return {'gmud_id':change.get('rcl_id'),'change_id':change['change_id'],'phase':change['phase']}

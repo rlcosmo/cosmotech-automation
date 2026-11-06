@@ -17,6 +17,7 @@ from automation.approval_portal import ApprovalPortal
 from automation.github_access import GitHubApp
 from automation.gitops_publisher import SignedGitPublisher, validate_bundle
 from automation.gmud import ChangeJournal, GLPIChanges, ProtectedPolicy, change_identity
+from automation.gmud_presentation import context_for
 from automation.live_evidence import KubeClient, LiveEvidence, client
 from automation.promotion_coordinator import PromotionCoordinator
 from automation.promotion_gate import PromotionGate, release_id
@@ -104,15 +105,15 @@ class Runtime:
             state={'release':release,'bundle':bundle,'before_bundle':{'resources':captured['resources']},
                    'before_revision':captured['revision']}
         path.write_text(json.dumps(state));path.chmod(0o600)
-        return {'release_id':release_id(release),'version':release['commit'][:12],'evidence_sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
+        return {'release_id':release_id(release),'version':bundle.get('application_version',release['commit'][:12]),'evidence_sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
 
     def policy_stage(self, identifier: str) -> dict:
         self.execution(identifier)
         state=json.loads(self.path(identifier).read_text());release=state['release'];now=datetime.now(UTC)
         record=self.changes.ensure(release,owner=self.config['owner'],
             ci_links=['https://github.com/rlcosmo/cosmotech-'+release['service']+'/actions/runs/'+release['run_id']],
-            implementation_plan=('Signed GitOps deployment and exact Argo/health validation. Initial Worker telemetry bootstrap requires human review; subsequent Worker delivery requires Canary metrics.'),
-            rollback_plan='Authenticated responsible request within 12h, compare current version, drain Worker inflight, signed restoration of the saved previous bundle; no blind retry.',now=now)
+            implementation_plan='Publicar pelo GitOps assinado; validar revisão e saúde no Argo CD. Worker: Canary com métricas e drenagem.',
+            rollback_plan='Solicitação autenticada até12h; conferir versão atual, drenar Worker e comprovar inflight zero antes de restaurar o digest anterior pelo publisher.',now=now,application_version=state['bundle'].get('application_version'),current_version=state['bundle'].get('current_version'))
         decision,reason=self.policy.decide(release,self.changes.history(),now=now)
         if decision in {'BLOCK','REJECT'}:
             self.changes.transition(record['id'],'REJECTED' if decision=='REJECT' else 'FAILED',now=now,details={'reason':reason})
@@ -120,17 +121,17 @@ class Runtime:
         self.portal.register(release,None)
         if decision=='HUMAN_REVIEW' and record['phase']=='CREATED':
             record=self.changes.transition(record['id'],'HUMAN_REVIEW',now=now,details={'reason':reason})
-        self.portal.set_context(release_id(release),{'phase':record['phase'],'change_id':record['change_id'],'decision':decision,'criticality':record['criticality']})
+        self.portal.set_context(release_id(release),context_for(record,decision=decision,policy_reason=reason))
         identity=release_id(release)
         with sqlite3.connect(self.gate.database) as db:
             old=db.execute('SELECT state FROM notifications WHERE id=?',(identity,)).fetchone()
             if old is None:db.execute('INSERT INTO notifications VALUES (?,\'dispatching\',NULL)',(identity,))
         if old is None:
-            message=self.notifier.send(release,None,change_id=record['change_id'])
+            message=self.notifier.send(release,None,change_id=record['change_id'],rcl_id=record.get('rcl_id'),application_version=record.get('application_version'))
             with sqlite3.connect(self.gate.database) as db:
                 db.execute('UPDATE notifications SET state=\'accepted\',message_id=? WHERE id=?',(message,identity))
         elif old[0]!='accepted':raise PermissionError('Notification outcome ambiguous; reconcile before retry')
-        return {'decision':decision,'reason':reason,'change_id':record['change_id'],'release_id':identity}
+        return {'decision':decision,'reason':reason,'change_id':record['change_id'],'gmud_id':record.get('rcl_id',str(record['change_id'])),'release_id':identity}
 
     def publisher(self):
         app=GitHubApp(self.live.credentials,'cosmotech-gitops',write=True)
@@ -169,7 +170,16 @@ class Runtime:
                             content_type='multipart/form-data; boundary=CosmoTechResume')
                         result.append({'change_id':change['change_id'],'action':'resume_after_authenticated_decision'})
             elif change['phase'] in {'DEPLOYING','OBSERVING','ROLLBACK_REQUESTED','ROLLBACK_RUNNING'}:
-                result.append(DeliveryRuntime(self,state).tick(change))
+                try:
+                    result.append(DeliveryRuntime(self,state).tick(change))
+                except (PermissionError,TimeoutError,OSError) as error:
+                    state['reconciliation_error']={'type':type(error).__name__,'message':str(error)[:300],'at':datetime.now(UTC).isoformat()}
+                    path.write_text(json.dumps(state));path.chmod(0o600)
+                    self.portal.set_context(release_id(state['release']),context_for(change,rollback_eligible=False,reconciliation_required=True))
+                    result.append({'gmud_id':change.get('rcl_id'),'change_id':change['change_id'],'phase':'RECONCILIATION_REQUIRED','error_type':type(error).__name__})
+            elif change['phase']=='ROLLED_BACK' and state.get('delivery',{}).get('phase')=='CANARY' and not state['delivery'].get('capacity_restored'):
+                from automation.canary_delivery import WorkerCanaryDelivery
+                result.append(WorkerCanaryDelivery(DeliveryRuntime(self,state)).tick())
         return {'reconciled':result,'scheduler_execution':identifier}
 
 

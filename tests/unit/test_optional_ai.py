@@ -93,7 +93,7 @@ def test_notification_and_portal_display_disabled_bedrock(tmp_path, release):
 
     message = notification(release, None, recipient='owner@example.invalid',
                            approval_origin='https://kestra.example.invalid')
-    assert 'Bedrock: DISABLED' in message.get_content()
+    assert 'Bedrock' not in message.get_content()
     assert 'AI advisory:' not in message.get_content()
     portal = ApprovalPortal(str(tmp_path / 'portal.db'), b'x' * 32, {'owner'},
                             lambda *args: True, 'https://kestra.example.invalid')
@@ -105,7 +105,8 @@ def test_notification_and_portal_display_disabled_bedrock(tmp_path, release):
     identity = portal.register(release, None)
     code, body = request(portal, '/releases/' + identity, auth=auth)
     assert code.startswith('200')
-    assert 'Bedrock disabled; deterministic policy' in body
+    assert 'Bedrock' not in body
+    assert 'Criticidade e política' in body
     assert portal.decision(identity) is None
 
 

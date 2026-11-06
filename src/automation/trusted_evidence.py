@@ -81,7 +81,18 @@ def collect(request: dict, *, now: datetime, github, ecr, runtime, workflow_hash
     container['image'] = image
     container['env'] = [e for e in container.get('env', []) if e['name'] != 'RELEASE_VERSION'] + [
         {'name':'RELEASE_VERSION','value':request['digest']}]
-    diff = classify_manifests(list(before.values()), list(after.values()))
+    policy_before=copy.deepcopy(before)
+    for name,resource in policy_before.items():
+        original=after.get(name,{})
+        if 'cosmotech.io/gmud-id' not in original.get('metadata',{}).get('annotations',{}):
+            annotations=resource.get('metadata',{}).get('annotations',{})
+            annotations.pop('cosmotech.io/gmud-id',None)
+            if not annotations:resource.get('metadata',{}).pop('annotations',None)
+        if resource.get('kind')=='Deployment':
+            labels=resource['spec']['template'].get('metadata',{}).get('labels',{})
+            source_labels=original['spec']['template'].get('metadata',{}).get('labels',{})
+            if 'cosmotech.io/gmud-id' not in source_labels:labels.pop('cosmotech.io/gmud-id',None)
+    diff = classify_manifests(list(policy_before.values()), list(after.values()))
     release = {key: request[key] for key in ('service', 'environment', 'commit', 'digest', 'run_id', 'execution_id')}
     release.update(current_digest=current_digest, observed_at=now.isoformat(),
                    manifest_sha256=hashlib.sha256(canonical(after)).hexdigest(),
@@ -92,4 +103,35 @@ def collect(request: dict, *, now: datetime, github, ecr, runtime, workflow_hash
                            'observability_reliable': live['observability_reliable'],
                            'dependencies_reviewed': dependencies,
                            'sensitive_changes': sensitive_source or diff['sensitive_changes']})
-    return release, {'resources': copy.deepcopy(after), 'baseline_commit': baseline}
+    return release, {'resources': copy.deepcopy(after), 'baseline_commit': baseline,
+                     'application_version':source_version(github,request['commit']),
+                     'current_version':source_version(github,baseline)}
+
+
+def source_version(github, commit: str) -> str:
+    """Read a literal from the tested source; never execute application code."""
+    import urllib.error
+    try:
+        source=github.file('src/orders/runtime/release.py',commit).decode()
+    except (KeyError, FileNotFoundError, urllib.error.HTTPError) as error:
+        if isinstance(error,urllib.error.HTTPError) and error.code!=404:
+            raise
+        try:
+            tree=ast.parse(github.file('src/orders/runtime/api.py',commit).decode())
+            for node in ast.walk(tree):
+                if isinstance(node,ast.Dict):
+                    for key,value in zip(node.keys,node.values,strict=True):
+                        if (isinstance(key,ast.Constant) and key.value=='version' and isinstance(value,ast.Constant)
+                                and isinstance(value.value,str) and re.fullmatch(r'[0-9]+\.[0-9]+\.[A-Za-z0-9_.+-]+',value.value)):
+                            return value.value
+        except (KeyError,FileNotFoundError):
+            pass
+        except urllib.error.HTTPError as missing:
+            if missing.code!=404:raise
+        return commit[:12]
+    for node in ast.parse(source).body:
+        if (isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='VERSION' for t in node.targets)
+                and isinstance(node.value,ast.Constant) and isinstance(node.value.value,str)
+                and re.fullmatch(r'[A-Za-z0-9_.+-]{1,64}',node.value.value)):
+            return node.value.value
+    return commit[:12]

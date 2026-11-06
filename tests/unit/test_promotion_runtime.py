@@ -79,4 +79,4 @@ def test_deployment_email_is_explicitly_marked_as_non_promoting(release, ai):
     payload = client.publish.call_args.kwargs
     assert payload['Subject'].startswith('[TESTE SEM DEPLOY]')
     assert 'Nenhuma imagem sera promovida' in payload['Message']
-    assert 'Authenticated review: https://' in payload['Message']
+    assert 'Portal autenticado: https://' in payload['Message']

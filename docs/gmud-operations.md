@@ -1,3 +1,9 @@
+## Estado vigente: RCL e portal —06/11/2026
+
+Gate revisão4 e nova identidade corporativa RCL implantados; portal pt-BR ativo, preservando autenticação/CSRF. RCL000001/GLPI5 teve Canary abortado com drenagem; RCL000002/GLPI6 API aguarda humano; RCL000003/GLPI7 Worker1.0.2 promovido após Canary1→2 e drenagem, em OBSERVING até22:04:27Z. Ver [operação RCL](rcl-portal-operations.md) e documentos showcase10/14. A observação12h não foi encerrada antecipadamente.
+
+## Registro anterior preservado
+
 ## Atualização06/11/2026 após aprovação do responsável
 
 As GMUDs3/API e4/Worker foram aprovadas por identidade autenticada e implantadas. Kestra SUCCESS na revisão2; GLPI permanece Review8/OBSERVING, sem erros registrados. API usa RollingUpdate; Worker executou o bootstrap rolling de telemetria, explicitamente aprovado. Não existe deployment Canary ativo; a ligação Canary normal permanece pendente. Janela API até20:45:17Z e Worker até20:46:26Z de06/11, sujeita aos controles de continuidade.

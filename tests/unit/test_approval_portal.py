@@ -23,6 +23,7 @@ def test_human_browser_flow_records_only_authenticated_bound_decision(tmp_path, 
                          lambda user, pw: (user, pw) == ("owner", "test-only"),
                          "https://kestra.example.invalid/promotion")
     identity = app.register(release, ai)
+    app.set_context(identity,{"phase":"HUMAN_REVIEW"})
     path = "/releases/" + identity
     assert request(app, path)[0].startswith("401")
     auth = "Basic " + base64.b64encode(b"owner:test-only").decode()
@@ -35,12 +36,15 @@ def test_human_browser_flow_records_only_authenticated_bound_decision(tmp_path, 
     assert request(app, path, "POST", encoded, auth)[0].startswith("200")
     assert app.decision(identity)["principal"] == "owner"
     assert app.decision(identity)["release_id"] == identity
+    assert ">Aprovar<" not in request(app,path,auth=auth)[1]
 
 
 def test_email_link_without_credentials_or_other_release_cannot_approve(tmp_path, release, ai):
     app = ApprovalPortal(str(tmp_path / "portal.db"), b"x" * 32, {"owner"},
                          lambda *args: True, "https://kestra.example.invalid")
-    path = "/releases/" + app.register(release, ai)
+    identity=app.register(release,ai)
+    app.set_context(identity,{"phase":"HUMAN_REVIEW"})
+    path = "/releases/" + identity
     assert request(app, path, "POST", "csrf=invalid&result=APPROVE")[0].startswith("403")
     assert request(app, "/releases/" + "f" * 64)[0].startswith("404")
 
@@ -52,7 +56,7 @@ def test_authenticated_rollback_request_is_separate_bound_and_non_deploying(tmp_
     app=ApprovalPortal(str(tmp_path/'portal.db'),b'x'*32,{'owner'},lambda *args:True,
                        'https://kestra.example.invalid')
     identity=app.register(release,None)
-    app.set_context(identity,{'phase':'OBSERVING','change_id':7,
+    app.set_context(identity,{'phase':'OBSERVING','change_id':7,'rollback_eligible':True,
                              'rollback_until':(datetime.now(UTC)+timedelta(hours=12)).isoformat()})
     auth='Basic '+base64.b64encode(b'owner:test-only').decode()
     path='/releases/'+identity+'/rollback'
@@ -67,6 +71,6 @@ def test_authenticated_rollback_request_is_separate_bound_and_non_deploying(tmp_
     assert app.rollback_request(identity)['principal']=='owner'
     assert app.decision(identity) is None
     assert request(app,path,'POST',data,auth)[0].startswith('409')
-    app.set_context(identity,{'phase':'OBSERVING','change_id':7,
+    app.set_context(identity,{'phase':'OBSERVING','change_id':7,'rollback_eligible':True,
                              'rollback_until':(datetime.now(UTC)-timedelta(seconds=1)).isoformat()})
     assert request(app,path,auth=auth)[0].startswith('409')

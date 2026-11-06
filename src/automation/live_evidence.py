@@ -122,6 +122,7 @@ class LiveEvidence:
         incidents=self.kube.query('ALERTS{alertstate="firing",severity="critical"}')
         return {'image':container['image'],'resources':resources,
                 'signature_key':self.config['gpg_fingerprint'][-16:] if enforced else '',
+                'argo_synced':app['status']['sync']['status']=='Synced',
                 'argo_healthy':app['status']['sync']['status']=='Synced' and app['status']['health']['status']=='Healthy'
                     and deployment['status'].get('availableReplicas',0)>=1
                     and not any(c.get('type','').endswith('Error') for c in app['status'].get('conditions') or []),

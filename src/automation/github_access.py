@@ -12,6 +12,12 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
 
+class GitHubAPIError(PermissionError):
+    def __init__(self,status: int):
+        self.status=status
+        super().__init__(f'GitHub evidence/publisher request rejected: HTTP {status}')
+
+
 class GitHubApp:
     def __init__(self, credentials: dict, repository: str, *, write: bool = False):
         if repository not in {'cosmotech-orders-api', 'cosmotech-orders-worker', 'cosmotech-gitops'}:
@@ -28,7 +34,7 @@ class GitHubApp:
                 data = response.read(4_000_000)
                 return data if raw else json.loads(data)
         except urllib.error.HTTPError as error:
-            raise PermissionError(f'GitHub evidence/publisher request rejected: HTTP {error.code}') from None
+            raise GitHubAPIError(error.code) from None
 
     def headers(self):
         if self.token is None or time.monotonic() >= self.expires:
@@ -63,7 +69,11 @@ class GitHubApp:
         return self.request('https://api.github.com/repos/rlcosmo/' + self.repository + '/' + path, headers=self.headers())
 
     def file(self, path, revision):
-        data = self.api('contents/' + urllib.parse.quote(path, safe='/') + '?ref=' + urllib.parse.quote(revision, safe=''))
+        try:
+            data = self.api('contents/' + urllib.parse.quote(path, safe='/') + '?ref=' + urllib.parse.quote(revision, safe=''))
+        except GitHubAPIError as error:
+            if error.status==404:raise FileNotFoundError(path) from None
+            raise
         if data.get('encoding') != 'base64' or data.get('size', 0) > 1_000_000:
             raise PermissionError('Missing or oversized source file')
         return base64.b64decode(data['content'])

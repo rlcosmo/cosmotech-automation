@@ -1,0 +1,74 @@
+"""Escaped Brazilian Portuguese interface; no decision or deployment authority."""
+from __future__ import annotations
+
+import base64
+import hashlib
+import html
+from datetime import datetime
+
+from automation.promotion_gate import instant
+
+CSS='''*{box-sizing:border-box}body{margin:0;background:#081525;color:#eef5ff;font:16px/1.6 system-ui,sans-serif}main{max-width:1180px;margin:auto;padding:28px 22px 60px}header{border-top:5px solid #ff9900;background:linear-gradient(125deg,#142b43,#102033);padding:32px;border-radius:16px;margin-bottom:24px}.brand{color:#39d5e8;letter-spacing:3px;font-size:12px;font-weight:700}h1{font-size:clamp(25px,4vw,38px);line-height:1.25;margin:18px 0 10px}h2{font-size:18px;color:#fff;margin:0 0 16px}.muted,small{color:#a9bed1}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.card{background:#11243a;border:1px solid #25425d;border-radius:14px;padding:24px;min-width:0}.wide{grid-column:1/-1}.badge{display:inline-block;background:#20374b;border:1px solid #3e627d;color:#8fe8f1;border-radius:20px;padding:4px 12px;margin:8px 6px 0 0;font-size:13px}.version{font-size:22px;overflow-wrap:anywhere}a{color:#70e1ec}p{margin:8px 0 14px}dl{margin:0}dt{color:#a9bed1;font-size:13px}dd{margin:2px 0 16px;overflow-wrap:anywhere}code{font-size:13px;overflow-wrap:anywhere;white-space:pre-wrap}details{margin:14px 0;border-top:1px solid #29445a;padding-top:12px}summary{cursor:pointer;color:#78dce8}button,.button{display:inline-block;border:0;border-radius:8px;padding:12px 18px;background:#ff9900;color:#102033;font:600 15px system-ui;cursor:pointer;text-decoration:none;margin:8px 10px 0 0}.secondary{background:#244159;color:#eef5ff}.reject{background:#603540;color:#fff}button:focus,a:focus,summary:focus{outline:3px solid #39d5e8;outline-offset:3px}textarea{width:100%;min-height:110px;background:#081525;color:#fff;border:1px solid #6289a4;border-radius:8px;padding:12px;font:inherit}.timeline{display:flex;flex-wrap:wrap;gap:10px;padding:0;list-style:none}.timeline li{padding:9px 12px;border:1px solid #38566e;border-radius:8px;color:#a9bed1}.timeline .done{color:#7fe4cf;border-color:#368778}.history{list-style:none;padding:0}.history li{border-left:2px solid #39d5e8;padding:0 0 18px 18px;margin-left:4px}.copy{font-size:12px;padding:7px 10px}footer{color:#9fb6c8;margin-top:28px;font-size:13px}@media(max-width:720px){.grid{grid-template-columns:1fr}header{padding:23px}.card{padding:20px}}'''
+JS='''document.addEventListener('click',async(e)=>{const b=e.target.closest('button[data-copy]');if(!b)return;const t=document.getElementById(b.dataset.copy);if(!t)return;try{await navigator.clipboard.writeText(t.textContent);b.textContent='Copiado';}catch{b.textContent='Selecione e copie o valor';}});'''
+
+
+def csp() -> str:
+    def digest(value):return base64.b64encode(hashlib.sha256(value.encode()).digest()).decode()
+    return "default-src 'none'; style-src 'sha256-"+digest(CSS)+"'; script-src 'sha256-"+digest(JS)+"'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+
+
+PHASE={'DECISION_RECORDED':'Decisão registrada — aguardando validação','CREATED':'Criada','HUMAN_REVIEW':'Aguardando aprovação humana','APPROVED':'Aprovada','DEPLOYING':'Em implantação','OBSERVING':'Observação de12h','CLOSED_SUCCESS':'Encerrada com sucesso','FAILED':'Falha — análise necessária','REJECTED':'Rejeitada','ROLLED_BACK':'Rollback concluído','ROLLBACK_REQUESTED':'Rollback solicitado','ROLLBACK_RUNNING':'Rollback em execução'}
+CRITICALITY={'CRITICAL':'CRÍTICA','NON_CRITICAL':'NÃO CRÍTICA','CUSTOM_CRITICAL':'CRÍTICA CUSTOMIZADA'}
+EVENT={'decision_recorded':'Decisão autenticada registrada','created':'Criada','human_review':'Validação concluída; revisão humana','approved':'Aprovada','deploying':'Implantação iniciada','observing':'Implantada e validada; observação de12h','closed_success':'Encerrada após observação','failed':'Falha registrada','rejected':'Rejeitada','rollback_requested':'Rollback solicitado','rollback_running':'Rollback em execução','rolled_back':'Rollback validado'}
+
+
+def render(release: dict, context: dict, csrf: str, *, now: datetime, rollback: bool=False, rollback_pending: bool=False) -> str:
+    esc=lambda value:html.escape(str(value if value is not None else 'Não informado'),quote=True)
+    app={'orders-api':'Orders API','orders-worker':'Orders Worker'}[release['service']]
+    gmud=context.get('rcl_id') or 'GLPI '+str(context.get('change_id','—'))
+    phase=context.get('phase','CREATED');label='Análise necessária' if context.get('reconciliation_required') else PHASE.get(phase,'Em análise')
+    current=context.get('current_version') or release['current_digest'][:19]
+    candidate=context.get('application_version') or release['commit'][:12]
+    def card(title,body,wide=False):return '<section class="card'+(' wide' if wide else '')+'"><h2>'+esc(title)+'</h2>'+body+'</section>'
+    out='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+esc(gmud+' — '+app)+'</title><style>'+CSS+'</style></head><body><main>'
+    out+='<header><div class="brand">COSMOTECH SOLUTIONS</div><h1>'+esc(gmud+' — '+app)+'</h1><p class="version">'+esc(current)+' → '+esc(candidate)+'</p><span class="badge">Ambiente '+esc(release['environment'].upper())+'</span><span class="badge">'+esc(CRITICALITY.get(context.get('criticality'), 'CRÍTICA' if release['service']=='orders-api' else 'NÃO CRÍTICA'))+'</span><span class="badge">'+esc(label)+'</span></header><div class="grid">'
+    out+=card('Identificação da mudança','<dl><dt>GMUD corporativa</dt><dd>'+esc(gmud)+'</dd><dt>Aplicação e versão</dt><dd>'+esc(app+' · '+candidate)+'</dd><dt>Registro nativo GLPI</dt><dd><a href="https://glpi.cosmotechsolutions.com.br/front/change.form.php?id='+esc(context.get('change_id',''))+'">Abrir mudança '+esc(context.get('change_id','—'))+'</a></dd></dl>')
+    policy=('Sempre exige aprovação humana autenticada.' if release['service']=='orders-api' else 'Aprovação automática condicionada aos controles técnicos; mudanças sensíveis exigem revisão humana.')
+    if context.get('criticality')=='CUSTOM_CRITICAL':policy='Aprovação automática somente após cinco GMUDs reais, válidas e concluídas com sucesso da mesma aplicação e ambiente; caso contrário, revisão humana.'
+    out+=card('Criticidade e política','<p>'+esc(policy)+'</p><p class="muted">A política é protegida. Aprovação não sobrepõe uma falha técnica.</p>')
+    out+=card('Pipeline e verificações','<p>Testes: <strong>'+('Aprovados' if release['checks']['tests_passed'] else 'Reprovados')+'</strong></p><p>Trivy: <strong>'+('Aprovado' if release['checks']['scan_passed'] else 'Reprovado')+'</strong></p><a href="https://github.com/rlcosmo/cosmotech-'+esc(release['service'])+'/actions/runs/'+esc(release['run_id'])+'">Abrir pipeline CI</a>')
+    details=''
+    for key,title in [('commit','Commit'),('current_digest','Digest atual'),('digest','Digest candidato')]:
+        details+='<p>'+title+'</p><code id="'+key+'">'+esc(release[key])+'</code><br><button type="button" class="secondary copy" data-copy="'+key+'">Copiar</button>'
+    out+=card('Versões e integridade','<p>Atual: '+esc(current)+'</p><p>Candidata: '+esc(candidate)+'</p><details><summary>Expandir commit e digests</summary>'+details+'</details>')
+    out+=card('Plano de implantação','<p>'+esc(context.get('execution_plan') or 'Publicação controlada pelo GitOps e validação de saúde no Argo CD.')+'</p>')
+    out+=card('Plano de rollback','<p>'+esc(context.get('rollback_plan') or 'Solicitação autenticada durante a janela; conferir versão atual e executar reversão controlada.')+'</p><p>Prazo: '+esc(context.get('rollback_until') or 'A janela inicia após validação técnica.')+'</p>')
+    events=context.get('events') or [];types={e['type'] for e in events}
+    timeline=''
+    for title,done in [('Criada',bool(events)),('Validada',all(release['checks'].get(k) is True for k in ['tests_passed','scan_passed','digest_verified','argo_healthy','observability_reliable'])),('Aprovada','approved' in types),('Implantada','observing' in types),('Observação12h',phase=='OBSERVING' or 'closed_success' in types),('Encerrada',phase in {'CLOSED_SUCCESS','ROLLED_BACK','REJECTED'})]:timeline+='<li'+(' class="done"' if done else '')+'>'+title+'</li>'
+    out+=card('Linha do tempo','<ol class="timeline">'+timeline+'</ol>',True)
+    history='<p>Responsável: '+esc(context.get('owner'))+'</p><ol class="history">'
+    for event in events:
+        details=event.get('details',{});history+='<li><strong>'+esc(EVENT.get(event['type'],'Evento de acompanhamento'))+'</strong><br><small>'+esc(event['at'])+'</small>'
+        if details.get('principal'):history+='<p>Decisão por '+esc(details['principal'])+'</p>'
+        history+='</li>'
+    out+=card('Histórico de decisões',history+'</ol>',True)
+    eligible=(context.get('rollback_eligible') is True and phase=='OBSERVING' and context.get('rollback_until') and now<instant(context['rollback_until']) and not rollback_pending)
+    form='<input type="hidden" name="csrf" value="'+esc(csrf)+'">'
+    if rollback and eligible:
+        actions='<p>A solicitação será verificada pelo Kestra antes de qualquer reversão.</p><form method="post">'+form+'<label for="reason">Justificativa</label><textarea id="reason" name="reason" minlength="8" maxlength="2000" required></textarea><button name="result" value="APPROVE">Solicitar rollback</button></form>'
+    elif phase=='HUMAN_REVIEW' and context.get('decision')!='APPROVE':
+        actions='<form method="post">'+form+'<button name="result" value="APPROVE">Aprovar</button><button class="reject" name="result" value="REJECT">Rejeitar</button></form>'
+    elif eligible:actions='<a class="button" href="/releases/'+release_identity(release)+'/rollback">Solicitar rollback</a>'
+    else:actions='<p>Somente leitura. '+('A versão já foi substituída ou aguarda conferência; reversão exige análise.' if phase=='OBSERVING' and context.get('rollback_eligible') is False else 'Nenhuma ação disponível neste estado.')+'</p>'
+    out+=card('Ações disponíveis',actions,True)
+    return out+'</div><footer>CosmoTech Solutions · Mudanças rastreáveis · Horários em UTC</footer></main><script>'+JS+'</script></body></html>'
+
+
+def release_identity(release):
+    from automation.promotion_gate import release_id
+    return release_id(release)
+
+
+def confirmation(message: str, identity: str) -> str:
+    return ('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CosmoTech — solicitação registrada</title><style>'+CSS+'</style></head><body><main><header><div class="brand">COSMOTECH SOLUTIONS</div><h1>Solicitação registrada</h1></header><section class="card"><p>'+html.escape(message)+'</p><a class="button" href="/releases/'+identity+'">Acompanhar GMUD</a></section></main></body></html>')
