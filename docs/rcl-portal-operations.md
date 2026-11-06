@@ -39,3 +39,17 @@ Página autenticada: https://kestra.cosmotechsolutions.com.br/releases/ . O prox
 O método de aprovação vem do histórico: principal policy-engine significa automática; outro principal auditado significa humana; ausência de decisão não é inferida como aprovação por ser não crítica. Decisão humana já registrada deixa a fila de pendentes enquanto aguarda reconciliação. Rollback ou falha posteriores permanecem visíveis no estado da mudança, mesmo que a autorização inicial tenha sido automática.
 
 Aprovar/Rejeitar foram movidos para cima dos detalhes. Formulário único, contextual, autenticado e com o mesmo CSRF/Origin; nenhuma aprovação em massa ou por GET foi introduzida. A central exige o mesmo provedor e a mesma lista de identidades autorizadas, inclusive vazia.172 testes e4 subtestes passaram; Ruff passou. A verificação real usa somente GET e confere que a contagem de decisões permanece inalterada.
+
+## Acompanhamento CD e estratégia (06/11/2026)
+
+O cabeçalho e a central oferecem links da execução Kestra e da aplicação Argo CD,
+construídos exclusivamente nos domínios fixos do laboratório. O selo Canary vem
+da estratégia efetivamente iniciada pelo runtime protegido e informa a etapa;
+API rolling e bootstrap rolling não recebem o selo. Concluído/revertido são
+estados explícitos, não indicação de consumidores ainda ativos.
+
+O runtime arquiva erros de observação com etapa e horário. Uma coleta válida
+remove o erro ativo sem apagar esse histórico. Métrica ausente continua causando
+a decisão conservadora original; mínimos de amostras, janela, lease, drenagem e
+controles de rollback foram preservados. Um SUCCESS da execução inicial Kestra
+não encerra a GMUD: a progressão e as 12h seguem no reconciliador persistente.

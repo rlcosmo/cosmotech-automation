@@ -71,6 +71,7 @@ class WorkerCanaryDelivery:
         change=self.rt.changes.read(self.delivery.identity)
         self.controller.start(receipt,self.release,self.rt.key.public_key(),now=datetime.now(UTC),gmud_id=change.get('rcl_id'))
         self.executor().apply(self.identity,now=datetime.now(UTC))
+        self.delivery.state['delivery']['canary_stage']='CANARY_1';self.delivery.save()
         self.delivery.context(change)
 
     def promote(self, identity, digest, operation):

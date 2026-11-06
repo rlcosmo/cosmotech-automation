@@ -118,7 +118,9 @@ def canary_badge(release: dict, context: dict) -> str:
     """Label only an observed, protected Worker delivery strategy."""
     if release['service']!='orders-worker' or context.get('deployment_strategy')!='CANARY':return ''
     stage=context.get('canary_stage')
-    suffix={'COMPLETE':' · concluído','ROLLED_BACK':' · revertido'}.get(stage,' · em andamento')
+    suffix={'CANARY_1':' · 1 consumidor','CANARY_2':' · 2 consumidores','PROMOTING':' · promovendo',
+            'DRAIN_PROMOTED':' · drenando','DRAIN_ROLLBACK':' · drenando para rollback',
+            'COMPLETE':' · concluído','ROLLED_BACK':' · revertido'}.get(stage,' · em andamento')
     return '<span class="badge">Canary'+suffix+'</span>'
 
 
