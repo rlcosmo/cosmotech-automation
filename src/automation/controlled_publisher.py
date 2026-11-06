@@ -8,6 +8,7 @@ import re
 import sqlite3
 
 from automation.gitops_publisher import verify_commit
+from automation.image_references import pinned_reference, publication_resources
 from automation.promotion_gate import canonical
 
 
@@ -32,13 +33,15 @@ class ControlledPublisher:
         """Intent is consumed before push; exact application version is checked under lock."""
         change=self.changes.read(identity)
         allowed={'deploy':{'DEPLOYING'},'canary':{'DEPLOYING'},'promote':{'DEPLOYING'},
-                 'rollback':{'ROLLBACK_RUNNING','DEPLOYING'},'drain-complete':{'DEPLOYING','ROLLBACK_RUNNING','ROLLED_BACK'}}
+                 'rollback':{'ROLLBACK_RUNNING','DEPLOYING'},'drain-complete':{'DEPLOYING','ROLLBACK_RUNNING','ROLLED_BACK'},'image-reference':{'OBSERVING'}}
         operation=effect.split(':')[0]
         if change['phase']=='ROLLED_BACK' and (effect!='drain-complete:rollback' or set(resources)!={'hpa.json'} or expected_digest!=change['release']['current_digest']):
             raise PermissionError('Mudança revertida permite somente restaurar capacidade após drenagem')
         if operation not in allowed or change['phase'] not in allowed[operation]:
             raise PermissionError('GMUD does not authorize this operation')
         service=change['release']['service']
+        if operation=='image-reference' and (effect!='image-reference:tag-only' or expected_digest!=change['release']['digest'] or not set(resources)<={'deployment.json','canary-deployment.json'} or 'deployment.json' not in resources):
+            raise PermissionError('Reference formatting cannot change release, scope or resources')
         if expected_digest not in {change['release']['digest'],change['release']['current_digest']}:
             raise PermissionError('Expected version is outside the authorized release')
         if operation=='rollback' and not re.fullmatch('[a-f0-9]{40}',restored_source_commit or ''):
@@ -72,6 +75,7 @@ class ControlledPublisher:
                 resource['metadata'].setdefault('annotations',{})['cosmotech.io/gmud-id']=change['rcl_id']
                 if resource['kind']=='Deployment' and resource['spec']['template']['spec']['containers'][0]['image'].split('@')[-1]==change['release']['digest']:
                     resource['spec']['template'].setdefault('metadata',{}).setdefault('labels',{})['cosmotech.io/gmud-id']=change['rcl_id']
+        resources=publication_resources(resources)
         effect_id=hashlib.sha256(canonical({'gmud':identity,'effect':effect,'resources':resources,'expected':expected_digest})).hexdigest()
         with (self.git.repo/'.git'/'cosmotech-publisher.lock').open('a') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX)
@@ -89,8 +93,14 @@ class ControlledPublisher:
             folder=self.git.repo/'gitops'/'apps'/service/'dev'
             current=json.loads((folder/'deployment.json').read_text())
             image=next(c['image'] for c in current['spec']['template']['spec']['containers'] if c['name']==service)
-            if image.split('@')[-1]!=expected_digest:
+            if pinned_reference(image).split('@')[-1]!=expected_digest:
                 raise PermissionError('GitOps already contains a superseding application version')
+            if operation=='image-reference':
+                for name,proposed in resources.items():
+                    original=json.loads((folder/name).read_text())
+                    normalized=publication_resources({name:original})[name]
+                    if normalized!=proposed:
+                        raise PermissionError('Reference formatting may only remove the digest suffix')
             plan=json.dumps({'parent':parent,'effect':effect,'files':resources})
             with sqlite3.connect(self.database) as db:
                 db.execute('INSERT INTO gitops_effects VALUES (?,?,?,NULL,?)',(effect_id,identity,'dispatching',plan))

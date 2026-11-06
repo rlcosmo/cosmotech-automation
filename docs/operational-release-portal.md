@@ -82,3 +82,11 @@ os controles passarem. CUSTOM_CRITICAL requer cinco GMUDs reais encerradas sem
 falha/rollback. Observação real12h e rollback autenticado preservam as verificações
 de prazo, concorrência, versão substituída, lease e idempotência. Bedrock segue
 desabilitado; NLB/CloudTrail não fazem parte desta alteração.
+
+### Referências por tag imutável — 06/11/2026
+
+Por decisão explícita do proprietário, o Deployment passa a usar o endereço ECR completo com a tag legível, sem `@sha256`. A tag contém aplicação, versão e número real da CI. O digest continua na evidência assinada e nas métricas, não precisa ser informado pelo operador ao selecionar a tag.
+
+O publisher transforma somente aliases comprovados por `DescribeImages` em repositórios integralmente `IMMUTABLE`, sem exclusões. Falha de consulta, divergência ou mutabilidade bloqueia a publicação. Adapters internos resolvem referências por tag novamente para preservar comparação de versão, Canary, proteção contra versão substituída e rollback. Histórico sem alias continua aceitando referências fixadas por digest.
+
+A operação restrita `image-reference:tag-only` permite converter uma GMUD em observação sem nova versão nem nova aprovação: aceita somente os Deployments da própria aplicação, o digest já aprovado e a remoção do sufixo. Qualquer alteração adicional é recusada por comparação integral com o GitOps assinado. Não muda a janela de observação, o aprovador ou os estados GLPI. GitOps continua oficial; edição direta no cluster pode ser reconciliada pelo Argo CD.

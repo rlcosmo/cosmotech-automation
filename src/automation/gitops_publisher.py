@@ -10,6 +10,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from automation.image_references import publication_resources
 from automation.promotion_gate import canonical, verify_receipt
 
 FILES = {"deployment.json": "Deployment", "configmap.json": "ConfigMap",
@@ -94,7 +95,8 @@ class SignedGitPublisher:
                 verify_commit(self.repo, parent, self.fingerprint, env=self.git_env)
             self.git("checkout", "--quiet", "--detach", parent)
             folder = self.repo / "gitops" / "apps" / release["service"] / "dev"
-            for filename, resource in bundle["resources"].items():
+            published_resources = publication_resources(bundle["resources"])
+            for filename, resource in published_resources.items():
                 path = folder / filename
                 # Reject symlink writes even when a branch outside the gate adds one.
                 if any(component.is_symlink() for component in [path, *path.parents] if component != self.repo.parent):
@@ -110,7 +112,7 @@ class SignedGitPublisher:
             proof.parent.mkdir(parents=True, exist_ok=True)
             proof.write_text(json.dumps({"application": release["service"],
                 "source_repository": "rlcosmo/cosmotech-" + release["service"],
-                "source_sha": release["commit"], "resources": bundle["resources"],
+                "source_sha": release["commit"], "resources": published_resources,
                 "promotion": {"release_id": receipt["payload"]["release_id"],
                               "kestra_execution_id": release["execution_id"]}}, indent=2) + "\n")
             self.git("add", "--", str(folder.relative_to(self.repo)), str(proof.relative_to(self.repo)))

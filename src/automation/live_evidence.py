@@ -70,7 +70,11 @@ class KubeClient:
         if application not in {'orders-api','orders-worker','orders-worker-canary'}:
             raise PermissionError('Unsupported application')
         namespace='orders-worker' if application.endswith('-canary') else application
-        return self.request('/apis/apps/v1/namespaces/'+namespace+'/deployments/'+application)
+        deployment=self.request('/apis/apps/v1/namespaces/'+namespace+'/deployments/'+application)
+        from automation.image_references import pinned_reference
+        for container in deployment['spec']['template']['spec']['containers']:
+            container['image']=pinned_reference(container['image'])
+        return deployment
 
     def query(self, expression: str) -> list[dict]:
         path='/api/v1/namespaces/observability/services/prometheus-kube-prometheus-prometheus:9090/proxy/api/v1/query?'
@@ -111,6 +115,11 @@ class LiveEvidence:
             raise PermissionError('Argo revision is not immutable')
         resources={name:json.loads(self.gitops.file('gitops/apps/'+application+'/dev/'+name,revision))
                    for name in ['deployment.json','configmap.json','service.json','hpa.json','ingress.json']}
+        from automation.image_references import pinned_reference
+        for resource in resources.values():
+            if resource.get('kind')=='Deployment':
+                for c in resource['spec']['template']['spec']['containers']:
+                    c['image']=pinned_reference(c['image'],self.ecr)
         deployment=self.kube.deployment(application)
         container=next(c for c in deployment['spec']['template']['spec']['containers'] if c['name']==application)
         enforced=(self.config.get('enforcement_ready') is True and project.get('signatureKeys')==[
