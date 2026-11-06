@@ -18,6 +18,7 @@ from automation.gmud_observation import ObservationWindow
 from automation.gmud_presentation import context_for
 from automation.live_evidence import ssm_result
 from automation.promotion_gate import release_id, verify_receipt
+from automation.release_projection import stage_event
 
 
 class DeliveryRuntime:
@@ -31,27 +32,40 @@ class DeliveryRuntime:
         path=self.rt.path(self.release['execution_id'])
         path.write_text(json.dumps(self.state));path.chmod(0o600)
 
+    def record_stage(self,key,status,result='',evidence=None):
+        stage_event(self.state,key,status,result=result,evidence=evidence);self.save()
+
     def controlled(self):
-        return ControlledPublisher(self.rt.publisher(),self.rt.changes,self.rt.gate.database)
+        return ControlledPublisher(self.rt.publisher(),self.rt.changes,self.rt.gate.database,observe=lambda status,result,evidence:self.record_stage('gitops',status,result,evidence))
 
     def sync(self, revision: str):
-        ssm_result(self.rt.ssm,'CosmoTech-Sync-Orders-GitOps',self.rt.config['argo_instance'],
-                   {'GitRevision':[revision]},timeout=190,raw=True)
+        self.record_stage('argo','RUNNING','Sincronizando revisão autorizada.',revision)
+        try:
+            ssm_result(self.rt.ssm,'CosmoTech-Sync-Orders-GitOps',self.rt.config['argo_instance'],
+                       {'GitRevision':[revision]},timeout=190,raw=True)
+        except (OSError,PermissionError,RuntimeError):
+            self.record_stage('argo','FAILED','A revisão não atingiu sincronização e saúde esperadas.',revision)
+            raise
+        self.record_stage('argo','SUCCESS','Revisão e saúde confirmadas pelo Argo CD.',revision)
 
     def snapshot(self):
         return self.rt.live.runtime(self.release['service'])
 
     def context(self, change: dict, *, rollback_eligible: bool = False):
+        if hasattr(self.rt,"refresh_operational"):self.rt.refresh_operational(self.state,change)
         self.rt.portal.register(self.release,None)
-        self.rt.portal.set_context(release_id(self.release),context_for(change,rollback_eligible=rollback_eligible,eligibility_observed_at=datetime.now(UTC).isoformat(),
+        self.rt.portal.set_context(release_id(self.release),context_for(change,state=self.state,rollback_eligible=rollback_eligible,eligibility_observed_at=datetime.now(UTC).isoformat(),
             deployment_strategy='CANARY' if self.state.get('delivery',{}).get('bootstrap') is False and self.release['service']=='orders-worker' else 'ROLLING',
             canary_stage=self.state.get('delivery',{}).get('canary_stage')))
 
     def validate(self, expected: str) -> dict:
+        self.record_stage('validation','RUNNING','Verificando digest, disponibilidade e métricas.')
         snapshot=self.snapshot()
         if (snapshot['image'].split('@')[-1]!=expected or not snapshot['argo_healthy']
                 or not snapshot['observability_reliable'] or not snapshot['incidents_clear']):
+            self.record_stage('validation','FAILED','Digest, saúde ou evidências não conferem.')
             raise PermissionError('Exact application version, health and runtime evidence did not validate')
+        self.record_stage('validation','SUCCESS','Digest e saúde validados com dados reais.')
         return snapshot
 
     def observing(self):
@@ -198,7 +212,9 @@ class DeliveryRuntime:
         self.window.record(change,self.sample(snapshot,now),now=now)
         from automation.promotion_gate import instant
         if now>=instant(change['rollback_until']):
+            self.record_stage('closure','RUNNING','Verificando as12h reais e o encerramento no GLPI.')
             evidence=self.window.completion(change,now=now)
             change=self.rt.changes.transition(self.identity,'CLOSED_SUCCESS',now=now,details=evidence)
+            self.record_stage('closure','SUCCESS','GMUD encerrada no GLPI após observação comprovada.')
             self.context(change)
         return {'gmud_id':change.get('rcl_id'),'change_id':change['change_id'],'phase':change['phase']}

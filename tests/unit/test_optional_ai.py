@@ -80,7 +80,7 @@ def test_coordinator_notifies_api_with_no_ai_and_never_dispatches(gate, release)
     publisher.publish.assert_not_called()
     worker.assert_not_called()
     coordinator.kestra.require_authorizing_execution.assert_called_once_with(
-        release, flow_revision=1, ai_enabled=False)
+        release, flow_revision=1, ai_enabled=False,flow_id="promotion_gate")
 
 
 def test_notification_and_portal_display_disabled_bedrock(tmp_path, release):

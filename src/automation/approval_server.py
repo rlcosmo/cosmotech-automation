@@ -7,6 +7,7 @@ from socketserver import ThreadingMixIn
 from wsgiref.simple_server import WSGIServer, make_server
 
 from automation.approval_portal import ApprovalPortal
+from automation.operator_auth import OperatorAuthenticator
 from automation.promotion_runtime import KestraClient
 
 
@@ -18,8 +19,8 @@ def main() -> None:
     config = json.loads(Path('/etc/cosmotech/promotion/portal.json').read_text())
     portal = ApprovalPortal(config['database'], Path(config['csrf_key']).read_bytes(),
                             set(config['allowed_principals']),
-                            lambda user, password: KestraClient.authenticate_user(config['kestra_origin'], user, password),
-                            config['public_origin'])
+                            OperatorAuthenticator(config.get('operator_users'),lambda user,password: KestraClient.authenticate_user(config['kestra_origin'],user,password)),
+                            config['public_origin'],ci_directory=config.get('ci_directory'))
     def application(environ, start_response):
         if environ.get('PATH_INFO') == '/healthz':
             start_response('200 OK', [('Content-Type', 'application/json'), ('Cache-Control', 'no-store')])

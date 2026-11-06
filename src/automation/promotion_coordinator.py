@@ -14,10 +14,11 @@ from automation.promotion_gate import canonical, evaluate, release_id
 class PromotionCoordinator:
     """Only trusted server evidence reaches this boundary, never CI-supplied checks."""
 
-    def __init__(self, gate, kestra, portal, notifier, publisher, start_worker, *, flow_revision: int, changes=None, owner: str | None = None):
+    def __init__(self, gate, kestra, portal, notifier, publisher, start_worker, *, flow_revision: int, changes=None, owner: str | None = None, flow_id: str = "promotion_gate"):
         self.gate, self.kestra, self.portal = gate, kestra, portal
         self.notifier, self.publisher, self.start_worker = notifier, publisher, start_worker
         self.flow_revision = flow_revision
+        self.flow_id=flow_id
         self.changes, self.owner = changes, owner
         with sqlite3.connect(gate.database) as db:
             db.execute("CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, state TEXT, message_id TEXT)")
@@ -25,7 +26,7 @@ class PromotionCoordinator:
     def complete(self, release: dict, bundle: dict, advice: dict | None, *, now: datetime) -> dict:
         """Human approval records no deploy. Only a verified Kestra execution dispatches."""
         self.kestra.require_authorizing_execution(
-            release, flow_revision=self.flow_revision, ai_enabled=self.gate.ai_enabled)
+            release, flow_revision=self.flow_revision, ai_enabled=self.gate.ai_enabled, flow_id=self.flow_id)
         validate_bundle(release, bundle)
         decision, reason = evaluate(release, advice, now=now, ai_enabled=self.gate.ai_enabled)
         change = None

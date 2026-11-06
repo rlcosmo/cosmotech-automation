@@ -48,12 +48,12 @@ class KestraClient:
             raise
 
     def require_authorizing_execution(self, release: dict, *, flow_revision: int,
-                                      ai_enabled: bool = False) -> dict:
+                                      ai_enabled: bool = False, flow_id: str = "promotion_gate") -> dict:
         identifier = urllib.parse.quote(release["execution_id"], safe="")
         execution = self.request("/api/v1/main/executions/" + identifier)
         if (execution.get("id") != release["execution_id"]
                 or execution.get("namespace") != "cosmotech.promotion"
-                or execution.get("flowId") != "promotion_gate"
+                or execution.get("flowId") != flow_id
                 or execution.get("flowRevision") != flow_revision
                 or execution.get("state", {}).get("current") not in {"RUNNING", "SUCCESS"}):
             raise PermissionError("Kestra is not authorizing this promotion")

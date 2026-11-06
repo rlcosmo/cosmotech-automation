@@ -44,8 +44,14 @@ def validate_bundle(release: dict, bundle: dict) -> None:
             raise PermissionError("Resource escaped the authorized application boundary")
     containers = resources["deployment.json"]["spec"]["template"]["spec"]["containers"]
     container = next(c for c in containers if c["name"] == service)
+    suffix=r"(?::sha-"+release['commit']+r")?"
+    if bundle.get('image_tag'):
+        from automation.release_images import version_tag
+        tag=version_tag(service,bundle['application_version'],str(bundle['build_number']))
+        if tag!=bundle['image_tag']:raise PermissionError('Image alias differs from verified application version/build')
+        suffix=':'+re.escape(tag)
     expression = (r"[0-9]{12}\.dkr\.ecr\.us-east-1\.amazonaws\.com/aws-eks-istio-lab-dev-"
-                  + re.escape(service) + r"(?::sha-" + release["commit"] + r")?@"
+                  + re.escape(service) + suffix + r"@"
                   + re.escape(release["digest"]))
     if not re.fullmatch(expression, container["image"]):
         raise PermissionError("Image is not the tested immutable application image")

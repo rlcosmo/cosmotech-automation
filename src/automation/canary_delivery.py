@@ -70,6 +70,7 @@ class WorkerCanaryDelivery:
         self.delivery.save();self.delivery.sync(revision)
         change=self.rt.changes.read(self.delivery.identity)
         self.controller.start(receipt,self.release,self.rt.key.public_key(),now=datetime.now(UTC),gmud_id=change.get('rcl_id'))
+        self.delivery.record_stage('canary','RUNNING','Iniciando consumo Canary autorizado e métricas por versão.')
         self.executor().apply(self.identity,now=datetime.now(UTC))
         self.delivery.state['delivery']['canary_stage']='CANARY_1';self.delivery.save()
         self.delivery.context(change)
@@ -164,7 +165,9 @@ class WorkerCanaryDelivery:
                 observation={} # Existing controller fails closed and requests drain/rollback.
             if observation:
                 self.delivery.state['delivery'].pop('observation_error',None)
+            if observation and 'canary_success' in observation:self.delivery.state['last_canary_quality_sample']=observation
             state=self.controller.step(self.identity,observation,now=datetime.now(UTC))
+            self.delivery.state['canary_reason']=state['reason']
         self.executor().apply(self.identity,now=datetime.now(UTC))
         self.delivery.state['delivery']['canary_stage']=state['stage'];self.delivery.save()
         self.delivery.context(self.rt.changes.read(self.delivery.identity))
@@ -172,13 +175,16 @@ class WorkerCanaryDelivery:
         if state['stage']=='COMPLETE':
             # Restore source HPA only after all candidate consumers have drained.
             revision=self.delivery.controlled().publish(self.delivery.identity,'drain-complete:canary',{'hpa.json':self.delivery.state['bundle']['resources']['hpa.json']},expected_digest=self.release['digest'])
-            self.delivery.sync(revision);self.delivery.observing()
+            self.delivery.sync(revision)
+            self.delivery.record_stage('canary','SUCCESS','Progressão, promoção e drenagem comprovadas.')
+            self.delivery.observing()
         elif state['stage']=='ROLLED_BACK':
             if not self.delivery.state['delivery'].get('capacity_restored'):
                 revision=self.delivery.controlled().publish(self.delivery.identity,'drain-complete:rollback',{'hpa.json':self.delivery.state['before_bundle']['resources']['hpa.json']},expected_digest=self.release['current_digest'])
                 self.delivery.sync(revision)
                 self.delivery.state['delivery'].update(capacity_restored=True,phase='ROLLED_BACK')
                 self.delivery.save()
+            self.delivery.record_stage('canary','FAILED','Canary revertido; candidata drenada e capacidade restaurada.')
             if change['phase']=='ROLLED_BACK':return {'gmud_id':change.get('rcl_id'),'canary_stage':'ROLLED_BACK','capacity_restored':True}
             change=self.rt.changes.transition(change['id'],'ROLLBACK_RUNNING',now=datetime.now(UTC),details={'reason':state['reason']})
             change=self.rt.changes.transition(change['id'],'ROLLED_BACK',now=datetime.now(UTC),details={'rollback_validated':True,'canary_stage':state['stage']})

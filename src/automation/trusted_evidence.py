@@ -75,7 +75,15 @@ def collect(request: dict, *, now: datetime, github, ecr, runtime, workflow_hash
         contract = contract and business_function(baseline) == business_function(request['commit'])
     before = live['resources']
     after = {name: json.loads(github.file('deploy/dev/' + name, request['commit'])) for name in FILES}
-    image = f'{account}.dkr.ecr.us-east-1.amazonaws.com/{repository}@' + request['digest']
+    version=source_version(github,request['commit'])
+    image_tag=None
+    if run.get('run_number') is not None:
+        from automation.release_images import version_tag
+        image_tag=version_tag(service,version,str(run['run_number']))
+        alias=ecr.describe_images(repositoryName=repository,imageIds=[{'imageTag':image_tag}])['imageDetails']
+        if len(alias)!=1 or alias[0]['imageDigest']!=request['digest']:
+            raise PermissionError('Readable image label does not match the tested digest')
+    image = f'{account}.dkr.ecr.us-east-1.amazonaws.com/{repository}' + (':'+image_tag if image_tag else '') + '@' + request['digest']
     deployment = after['deployment.json']['spec']['template']['spec']
     container = next(c for c in deployment['containers'] if c['name'] == service)
     container['image'] = image
@@ -92,7 +100,11 @@ def collect(request: dict, *, now: datetime, github, ecr, runtime, workflow_hash
             labels=resource['spec']['template'].get('metadata',{}).get('labels',{})
             source_labels=original['spec']['template'].get('metadata',{}).get('labels',{})
             if 'cosmotech.io/gmud-id' not in source_labels:labels.pop('cosmotech.io/gmud-id',None)
+            for owned in ['app.kubernetes.io/version','cosmotech.io/release']:
+                if owned not in source_labels:labels.pop(owned,None)
     diff = classify_manifests(list(policy_before.values()), list(after.values()))
+    if image_tag:
+        after['deployment.json']['spec']['template'].setdefault('metadata',{}).setdefault('labels',{}).update({'app.kubernetes.io/version':version[:63].replace('+','-'),'cosmotech.io/release':image_tag[:63]})
     release = {key: request[key] for key in ('service', 'environment', 'commit', 'digest', 'run_id', 'execution_id')}
     release.update(current_digest=current_digest, observed_at=now.isoformat(),
                    manifest_sha256=hashlib.sha256(canonical(after)).hexdigest(),
@@ -104,7 +116,8 @@ def collect(request: dict, *, now: datetime, github, ecr, runtime, workflow_hash
                            'dependencies_reviewed': dependencies,
                            'sensitive_changes': sensitive_source or diff['sensitive_changes']})
     return release, {'resources': copy.deepcopy(after), 'baseline_commit': baseline,
-                     'application_version':source_version(github,request['commit']),
+                     'application_version':version,'image_tag':image_tag,'build_number':run.get('run_number'),'ci_attempt':request['run_attempt'],
+                     'ci_evidence':{'started_at':required[0].get('started_at'),'ended_at':required[-1].get('completed_at'),'jobs':[{'name':j['name'],'status':j['conclusion'],'started_at':j.get('started_at'),'ended_at':j.get('completed_at')} for j in required]},
                      'current_version':source_version(github,baseline)}
 
 

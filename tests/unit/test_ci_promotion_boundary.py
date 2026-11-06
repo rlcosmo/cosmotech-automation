@@ -20,9 +20,11 @@ def test_ci_requests_only(service, filename, monkeypatch):
     raw = (repository / '.github/workflows' / filename).read_text()
     assert 'actions/create-github-app-token' not in raw
     assert 'gh pr merge' not in raw
+    monkeypatch.syspath_prepend(str(repository/'scripts'))
     spec = importlib.util.spec_from_file_location('request_promotion', repository / 'scripts/request_promotion.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    monkeypatch.setattr(module,'publish_version_alias',lambda *args: 'verified-version-alias')
     monkeypatch.setenv('GITHUB_SHA', 'a' * 40)
     monkeypatch.setenv('GITHUB_RUN_ID', '123')
     monkeypatch.setenv('GITHUB_RUN_ATTEMPT', '1')

@@ -33,7 +33,7 @@ def enqueue(database: str, kestra, *, service: str, commit: str, digest: str,
     boundary = "cosmotech-" + uuid.uuid4().hex
     body = "".join(f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'
                    for key, value in inputs.items()) + f"--{boundary}--\r\n"
-    execution = kestra.request("/api/v1/main/executions/cosmotech.promotion/promotion_gate",
+    execution = kestra.request("/api/v1/main/executions/cosmotech.promotion/release_pipeline",
                               method="POST", body=body.encode(),
                               content_type="multipart/form-data; boundary=" + boundary)
     identifier = execution.get("id")

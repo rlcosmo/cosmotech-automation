@@ -187,7 +187,7 @@ class ChangeJournal:
         return rows
 
     def ensure(self, release: dict, *, owner: str, ci_links: list[str],
-               implementation_plan: str, rollback_plan: str, now: datetime, synthetic: bool = False, application_version: str | None = None, current_version: str | None = None) -> dict:
+               implementation_plan: str, rollback_plan: str, now: datetime, synthetic: bool = False, application_version: str | None = None, current_version: str | None = None, kestra_flow: str = "promotion_gate") -> dict:
         identity = change_identity(release)
         if not owner or not ci_links or not implementation_plan or not rollback_plan or type(synthetic) is not bool:
             raise ValueError('Incomplete mandatory GMUD metadata')
@@ -195,7 +195,8 @@ class ChangeJournal:
                   'criticality': self.policy.category(release), 'owner': owner, 'ci_links': ci_links,
                   'execution_plan': implementation_plan, 'rollback_plan': rollback_plan,
                   'kestra_execution_id': release['execution_id'],
-                  'kestra_url': 'https://kestra.cosmotechsolutions.com.br/ui/executions/main/cosmotech.promotion/promotion_gate/' + release['execution_id'],
+                  'kestra_flow_id':kestra_flow,
+                  'kestra_url': 'https://kestra.cosmotechsolutions.com.br/ui/executions/main/cosmotech.promotion/'+kestra_flow+'/' + release['execution_id'],
                   'argo_application': release['service'] + '-dev',
                   'synthetic': synthetic, 'phase': 'CREATED', 'outcome': None, 'errors': [],
                   'rollback': False, 'validated_at': None, 'completed_at': None,

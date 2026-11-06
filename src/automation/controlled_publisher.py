@@ -12,12 +12,23 @@ from automation.promotion_gate import canonical
 
 
 class ControlledPublisher:
-    def __init__(self, git, changes, database: str):
+    def __init__(self, git, changes, database: str, observe=None):
         self.git, self.changes, self.database=git,changes,database
+        self.observe=observe
         with sqlite3.connect(database) as db:
             db.execute('CREATE TABLE IF NOT EXISTS gitops_effects (id TEXT PRIMARY KEY, gmud TEXT, state TEXT, revision TEXT, plan TEXT)')
 
     def publish(self, identity: str, effect: str, resources: dict[str,dict], *, expected_digest: str, restored_source_commit: str | None = None) -> str:
+        if self.observe:self.observe('RUNNING','Publicando pelo writer exclusivo.',effect)
+        try:
+            revision=self._publish(identity,effect,resources,expected_digest=expected_digest,restored_source_commit=restored_source_commit)
+        except Exception:
+            if self.observe:self.observe('FAILED','Publicação interrompida; consultar evidências.',effect)
+            raise
+        if self.observe:self.observe('SUCCESS','Commit assinado publicado.',revision)
+        return revision
+
+    def _publish(self, identity: str, effect: str, resources: dict[str,dict], *, expected_digest: str, restored_source_commit: str | None = None) -> str:
         """Intent is consumed before push; exact application version is checked under lock."""
         change=self.changes.read(identity)
         allowed={'deploy':{'DEPLOYING'},'canary':{'DEPLOYING'},'promote':{'DEPLOYING'},
@@ -52,7 +63,7 @@ class ControlledPublisher:
                 if len(containers)!=1 or containers[0]['name']!=service:
                     raise PermissionError('Unexpected companion container')
                 image=containers[0]['image']
-                if (not re.fullmatch(r'[0-9]{12}\.dkr\.ecr\.us-east-1\.amazonaws\.com/aws-eks-istio-lab-dev-'+re.escape(service)+r'(?::sha-[a-f0-9]{40})?@sha256:[a-f0-9]{64}',image)
+                if (not re.fullmatch(r'[0-9]{12}\.dkr\.ecr\.us-east-1\.amazonaws\.com/aws-eks-istio-lab-dev-'+re.escape(service)+r'(?::(?:sha-[a-f0-9]{40}|(?:worker|api)-[A-Za-z0-9_.-]+-[0-9]{1,20}))?@sha256:[a-f0-9]{64}',image)
                         or image.split('@')[-1] not in {change['release']['digest'],change['release']['current_digest']}):
                     raise PermissionError('Image escaped the approved application versions')
         resources=json.loads(json.dumps(resources))

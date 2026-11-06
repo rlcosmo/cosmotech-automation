@@ -6,6 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
+from automation.ci_correlation import update
 from automation.promotion_request import enqueue
 from automation.promotion_runtime import KestraClient
 
@@ -25,6 +26,7 @@ def main() -> None:
                          values["KESTRA_ADMIN_USERNAME"], values["KESTRA_ADMIN_PASSWORD"])
     result = enqueue("/var/lib/cosmotech-promotion/requests.db", client, service=args.service,
                      commit=args.commit, digest=args.digest, run_id=args.run_id, run_attempt=args.run_attempt)
+    update({'service':args.service,'commit':args.commit,'run_id':args.run_id,'run_attempt':args.run_attempt},execution_id=result['kestra_execution_id'])
     print(json.dumps(result))
 
 
