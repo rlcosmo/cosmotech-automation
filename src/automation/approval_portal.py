@@ -6,6 +6,7 @@ function. Kestra must consume the bound decision through the deterministic gate.
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import sqlite3
@@ -13,7 +14,7 @@ import urllib.parse
 from collections.abc import Callable
 from datetime import UTC, datetime
 
-from automation.portal_view import confirmation, csp, render
+from automation.portal_view import confirmation, csp, render, render_index
 from automation.promotion_gate import instant, release_id
 from automation.promotion_identity import authenticated_human, challenge
 
@@ -59,6 +60,16 @@ class ApprovalPortal:
             row = db.execute("SELECT request FROM portal_rollback_requests WHERE id=?", (identity,)).fetchone()
         return json.loads(row[0]) if row else None
 
+    def authenticate_reader(self, authorization: str) -> bool:
+        """Read-only index uses the same identity provider and allowlist."""
+        try:
+            if not authorization.startswith('Basic ') or len(authorization)>4096:
+                return False
+            username,password=base64.b64decode(authorization[6:],validate=True).decode().split(':',1)
+            return bool(username in self.allowed and password and self.authenticate(username,password) is True)
+        except (ValueError,UnicodeError,PermissionError,OSError):
+            return False
+
     def __call__(self, environ, start_response):
         def reply(code, body, authenticate=False):
             headers = [("Content-Type", "text/html; charset=utf-8"), ("Cache-Control", "no-store"),
@@ -68,6 +79,15 @@ class ApprovalPortal:
                 headers.append(("WWW-Authenticate", 'Basic realm="CosmoTech approval", charset="UTF-8"'))
             start_response(code, headers)
             return [body.encode()]
+        if environ.get('PATH_INFO')=='/releases/':
+            if environ.get('REQUEST_METHOD')!='GET':
+                return reply('405 Method Not Allowed','Método não permitido')
+            if not self.authenticate_reader(environ.get('HTTP_AUTHORIZATION','')):
+                return reply('401 Unauthorized','Autenticação necessária',True)
+            with sqlite3.connect(self.database) as db:
+                rows=db.execute('SELECT r.id,r.release,c.context,h.decision FROM approval_requests r JOIN approval_context c ON r.id=c.id LEFT JOIN human_approvals h ON r.id=h.id ORDER BY r.rowid DESC').fetchall()
+            entries=[{'id':row[0],'release':json.loads(row[1]),'context':json.loads(row[2]),'decision':json.loads(row[3]) if row[3] else None} for row in rows]
+            return reply('200 OK',render_index(entries))
         match = re.fullmatch(r"/releases/([a-f0-9]{64})(/rollback)?", environ.get("PATH_INFO", ""))
         if not match:
             return reply("404 Not Found", "Página não encontrada")

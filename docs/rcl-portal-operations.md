@@ -31,3 +31,11 @@ A janela12h só começa depois de validação técnica final; nenhum fechamento 
 RCL000001/GLPI5, RCL000002/GLPI6 e RCL000003/GLPI7 são reais; números não reutilizados. Fontes completas em showcase10/14 do laboratório. API2.0.1-lab aguarda humano; Worker1.0.2 concluiu1→2 consumidores, promoção e drenagem e entrou em OBSERVING até22:04:27Z de06/11/2026. Foram800 pedidos sintéticos aceitos; três amostras lidas pela API estavam COMPLETED, com pagamento SIMULATED_CAPTURED (simulação da aplicação, não pagamento externo real). Dashboard Grafana `orders-worker-canary` instalado; painéis SQS do exporter ainda podem apresentar SEM DADOS, explicitamente sem equivalência a zero. O gate consulta SQS/CW diretamente com permissão somente GetQueueAttributes nas duas filas e GetMetricStatistics já existente.
 
 Sem novas instâncias/nós/volumes ou alterações NLB/CloudTrail. Bedrock permanece opcional e desabilitado, sem inferência. Custos variáveis de testes/notificações/telemetria não foram isolados; não declarar custo incremental zero.
+
+## Central de aprovações e ações superiores
+
+Página autenticada: https://kestra.cosmotechsolutions.com.br/releases/ . O proxy existente já atende esse prefixo; não houve alteração de rede, autenticação do provedor ou fluxos Kestra. Pendências HUMAN_REVIEW sem decisão ficam primeiro. A outra seção acompanha validações, decisões já registradas e estados implantados/encerrados. O nível de criticidade aparece explicitamente em cada card e em destaque na página da GMUD.
+
+O método de aprovação vem do histórico: principal policy-engine significa automática; outro principal auditado significa humana; ausência de decisão não é inferida como aprovação por ser não crítica. Decisão humana já registrada deixa a fila de pendentes enquanto aguarda reconciliação. Rollback ou falha posteriores permanecem visíveis no estado da mudança, mesmo que a autorização inicial tenha sido automática.
+
+Aprovar/Rejeitar foram movidos para cima dos detalhes. Formulário único, contextual, autenticado e com o mesmo CSRF/Origin; nenhuma aprovação em massa ou por GET foi introduzida. A central exige o mesmo provedor e a mesma lista de identidades autorizadas, inclusive vazia.172 testes e4 subtestes passaram; Ruff passou. A verificação real usa somente GET e confere que a contagem de decisões permanece inalterada.

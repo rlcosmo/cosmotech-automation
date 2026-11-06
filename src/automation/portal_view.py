@@ -8,7 +8,7 @@ from datetime import datetime
 
 from automation.promotion_gate import instant
 
-CSS='''*{box-sizing:border-box}body{margin:0;background:#081525;color:#eef5ff;font:16px/1.6 system-ui,sans-serif}main{max-width:1180px;margin:auto;padding:28px 22px 60px}header{border-top:5px solid #ff9900;background:linear-gradient(125deg,#142b43,#102033);padding:32px;border-radius:16px;margin-bottom:24px}.brand{color:#39d5e8;letter-spacing:3px;font-size:12px;font-weight:700}h1{font-size:clamp(25px,4vw,38px);line-height:1.25;margin:18px 0 10px}h2{font-size:18px;color:#fff;margin:0 0 16px}.muted,small{color:#a9bed1}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.card{background:#11243a;border:1px solid #25425d;border-radius:14px;padding:24px;min-width:0}.wide{grid-column:1/-1}.badge{display:inline-block;background:#20374b;border:1px solid #3e627d;color:#8fe8f1;border-radius:20px;padding:4px 12px;margin:8px 6px 0 0;font-size:13px}.version{font-size:22px;overflow-wrap:anywhere}a{color:#70e1ec}p{margin:8px 0 14px}dl{margin:0}dt{color:#a9bed1;font-size:13px}dd{margin:2px 0 16px;overflow-wrap:anywhere}code{font-size:13px;overflow-wrap:anywhere;white-space:pre-wrap}details{margin:14px 0;border-top:1px solid #29445a;padding-top:12px}summary{cursor:pointer;color:#78dce8}button,.button{display:inline-block;border:0;border-radius:8px;padding:12px 18px;background:#ff9900;color:#102033;font:600 15px system-ui;cursor:pointer;text-decoration:none;margin:8px 10px 0 0}.secondary{background:#244159;color:#eef5ff}.reject{background:#603540;color:#fff}button:focus,a:focus,summary:focus{outline:3px solid #39d5e8;outline-offset:3px}textarea{width:100%;min-height:110px;background:#081525;color:#fff;border:1px solid #6289a4;border-radius:8px;padding:12px;font:inherit}.timeline{display:flex;flex-wrap:wrap;gap:10px;padding:0;list-style:none}.timeline li{padding:9px 12px;border:1px solid #38566e;border-radius:8px;color:#a9bed1}.timeline .done{color:#7fe4cf;border-color:#368778}.history{list-style:none;padding:0}.history li{border-left:2px solid #39d5e8;padding:0 0 18px 18px;margin-left:4px}.copy{font-size:12px;padding:7px 10px}footer{color:#9fb6c8;margin-top:28px;font-size:13px}@media(max-width:720px){.grid{grid-template-columns:1fr}header{padding:23px}.card{padding:20px}}'''
+CSS='''*{box-sizing:border-box}body{margin:0;background:#081525;color:#eef5ff;font:16px/1.6 system-ui,sans-serif}main{max-width:1180px;margin:auto;padding:28px 22px 60px}header{border-top:5px solid #ff9900;background:linear-gradient(125deg,#142b43,#102033);padding:32px;border-radius:16px;margin-bottom:24px}.brand{color:#39d5e8;letter-spacing:3px;font-size:12px;font-weight:700}h1{font-size:clamp(25px,4vw,38px);line-height:1.25;margin:18px 0 10px}h2{font-size:18px;color:#fff;margin:0 0 16px}.muted,small{color:#a9bed1}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.card{background:#11243a;border:1px solid #25425d;border-radius:14px;padding:24px;min-width:0}.wide{grid-column:1/-1}.badge{display:inline-block;background:#20374b;border:1px solid #3e627d;color:#8fe8f1;border-radius:20px;padding:4px 12px;margin:8px 6px 0 0;font-size:13px}.version{font-size:22px;overflow-wrap:anywhere}a{color:#70e1ec}p{margin:8px 0 14px}dl{margin:0}dt{color:#a9bed1;font-size:13px}dd{margin:2px 0 16px;overflow-wrap:anywhere}code{font-size:13px;overflow-wrap:anywhere;white-space:pre-wrap}details{margin:14px 0;border-top:1px solid #29445a;padding-top:12px}summary{cursor:pointer;color:#78dce8}button,.button{display:inline-block;border:0;border-radius:8px;padding:12px 18px;background:#ff9900;color:#102033;font:600 15px system-ui;cursor:pointer;text-decoration:none;margin:8px 10px 0 0}.secondary{background:#244159;color:#eef5ff}.reject{background:#603540;color:#fff}button:focus,a:focus,summary:focus{outline:3px solid #39d5e8;outline-offset:3px}textarea{width:100%;min-height:110px;background:#081525;color:#fff;border:1px solid #6289a4;border-radius:8px;padding:12px;font:inherit}.timeline{display:flex;flex-wrap:wrap;gap:10px;padding:0;list-style:none}.timeline li{padding:9px 12px;border:1px solid #38566e;border-radius:8px;color:#a9bed1}.timeline .done{color:#7fe4cf;border-color:#368778}.history{list-style:none;padding:0}.history li{border-left:2px solid #39d5e8;padding:0 0 18px 18px;margin-left:4px}.copy{font-size:12px;padding:7px 10px}.criticality{font-size:20px;padding:14px 18px;border-left:5px solid #ff9900;background:#081525;border-radius:8px}.actions-top{margin-bottom:24px}.approval-mode{color:#8fe8f1;font-weight:600}nav{margin:14px 0}.summary{display:flex;flex-wrap:wrap;gap:12px;margin:20px 0}.summary .badge{font-size:16px}.entry{margin-bottom:18px}footer{color:#9fb6c8;margin-top:28px;font-size:13px}@media(max-width:720px){.grid{grid-template-columns:1fr}header{padding:23px}.card{padding:20px}}'''
 JS='''document.addEventListener('click',async(e)=>{const b=e.target.closest('button[data-copy]');if(!b)return;const t=document.getElementById(b.dataset.copy);if(!t)return;try{await navigator.clipboard.writeText(t.textContent);b.textContent='Copiado';}catch{b.textContent='Selecione e copie o valor';}});'''
 
 
@@ -31,7 +31,7 @@ def render(release: dict, context: dict, csrf: str, *, now: datetime, rollback: 
     candidate=context.get('application_version') or release['commit'][:12]
     def card(title,body,wide=False):return '<section class="card'+(' wide' if wide else '')+'"><h2>'+esc(title)+'</h2>'+body+'</section>'
     out='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+esc(gmud+' — '+app)+'</title><style>'+CSS+'</style></head><body><main>'
-    out+='<header><div class="brand">COSMOTECH SOLUTIONS</div><h1>'+esc(gmud+' — '+app)+'</h1><p class="version">'+esc(current)+' → '+esc(candidate)+'</p><span class="badge">Ambiente '+esc(release['environment'].upper())+'</span><span class="badge">'+esc(CRITICALITY.get(context.get('criticality'), 'CRÍTICA' if release['service']=='orders-api' else 'NÃO CRÍTICA'))+'</span><span class="badge">'+esc(label)+'</span></header><div class="grid">'
+    out+='<header><div class="brand">COSMOTECH SOLUTIONS</div><nav><a href="/releases/">Todas as aprovações</a></nav><h1>'+esc(gmud+' — '+app)+'</h1><p class="criticality">Criticidade da aplicação: <strong>'+esc(criticality_label(release,context))+'</strong></p><p class="approval-mode">'+esc(approval_mode(context))+'</p><p class="version">'+esc(current)+' → '+esc(candidate)+'</p><span class="badge">Ambiente '+esc(release['environment'].upper())+'</span><span class="badge">'+esc(CRITICALITY.get(context.get('criticality'), 'CRÍTICA' if release['service']=='orders-api' else 'NÃO CRÍTICA'))+'</span><span class="badge">'+esc(label)+'</span></header><!--top-actions--><div class="grid">'
     out+=card('Identificação da mudança','<dl><dt>GMUD corporativa</dt><dd>'+esc(gmud)+'</dd><dt>Aplicação e versão</dt><dd>'+esc(app+' · '+candidate)+'</dd><dt>Registro nativo GLPI</dt><dd><a href="https://glpi.cosmotechsolutions.com.br/front/change.form.php?id='+esc(context.get('change_id',''))+'">Abrir mudança '+esc(context.get('change_id','—'))+'</a></dd></dl>')
     policy=('Sempre exige aprovação humana autenticada.' if release['service']=='orders-api' else 'Aprovação automática condicionada aos controles técnicos; mudanças sensíveis exigem revisão humana.')
     if context.get('criticality')=='CUSTOM_CRITICAL':policy='Aprovação automática somente após cinco GMUDs reais, válidas e concluídas com sucesso da mesma aplicação e ambiente; caso contrário, revisão humana.'
@@ -61,7 +61,7 @@ def render(release: dict, context: dict, csrf: str, *, now: datetime, rollback: 
         actions='<form method="post">'+form+'<button name="result" value="APPROVE">Aprovar</button><button class="reject" name="result" value="REJECT">Rejeitar</button></form>'
     elif eligible:actions='<a class="button" href="/releases/'+release_identity(release)+'/rollback">Solicitar rollback</a>'
     else:actions='<p>Somente leitura. '+('A versão já foi substituída ou aguarda conferência; reversão exige análise.' if phase=='OBSERVING' and context.get('rollback_eligible') is False else 'Nenhuma ação disponível neste estado.')+'</p>'
-    out+=card('Ações disponíveis',actions,True)
+    out=out.replace('<!--top-actions-->','<section class="card actions-top"><h2>Ações da GMUD</h2>'+actions+'</section>',1)
     return out+'</div><footer>CosmoTech Solutions · Mudanças rastreáveis · Horários em UTC</footer></main><script>'+JS+'</script></body></html>'
 
 
@@ -72,3 +72,42 @@ def release_identity(release):
 
 def confirmation(message: str, identity: str) -> str:
     return ('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CosmoTech — solicitação registrada</title><style>'+CSS+'</style></head><body><main><header><div class="brand">COSMOTECH SOLUTIONS</div><h1>Solicitação registrada</h1></header><section class="card"><p>'+html.escape(message)+'</p><a class="button" href="/releases/'+identity+'">Acompanhar GMUD</a></section></main></body></html>')
+
+
+def criticality_label(release: dict, context: dict) -> str:
+    return CRITICALITY.get(context.get('criticality'), 'CRÍTICA' if release['service']=='orders-api' else 'NÃO CRÍTICA')
+
+
+def approval_mode(context: dict, recorded: dict | None = None) -> str:
+    """Describe actual decisions; noncritical alone never means auto-approved."""
+    approved=next((e for e in reversed(context.get('events') or []) if e['type']=='approved'),None)
+    if approved:
+        principal=approved.get('details',{}).get('principal')
+        if principal=='policy-engine':return 'Aprovada automaticamente pela política'
+        if principal:return 'Aprovada por interação humana'
+        return 'Aprovação registrada — origem não informada'
+    if recorded is not None:
+        return 'Aprovação humana registrada — aguardando validação' if recorded.get('result')=='APPROVE' else 'Rejeição humana registrada'
+    if context.get('phase')=='HUMAN_REVIEW':return 'Interação humana necessária'
+    if context.get('phase')=='DECISION_RECORDED':return 'Decisão humana registrada — aguardando validação'
+    return 'Aguardando validação ou sem aprovação registrada'
+
+
+def render_index(entries: list[dict]) -> str:
+    esc=lambda value:html.escape(str(value),quote=True)
+    pending=[e for e in entries if e['context'].get('phase')=='HUMAN_REVIEW' and e['decision'] is None]
+    others=[e for e in entries if e not in pending]
+    automatic=sum(any(x['type']=='approved' and x.get('details',{}).get('principal')=='policy-engine' for x in e['context'].get('events') or []) for e in entries)
+    out='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CosmoTech — Central de aprovações</title><style>'+CSS+'</style></head><body><main><header><div class="brand">COSMOTECH SOLUTIONS</div><h1>Central de aprovações</h1><p>Identifique o que exige sua decisão e acompanhe as aprovações automáticas.</p><div class="summary"><span class="badge">'+str(len(pending))+' pendente(s) de interação humana</span><span class="badge">'+str(automatic)+' aprovação(ões) automática(s) no histórico</span></div></header>'
+    for title,rows in [('Pendentes de aprovação humana',pending),('Validação, aprovações registradas e acompanhamento',others)]:
+        out+='<h2>'+title+'</h2>'
+        if not rows:
+            out+='<section class="card entry"><p>'+('Nenhuma aprovação humana pendente.' if not rows and title.startswith('Pendentes') else 'Nenhuma outra GMUD disponível.')+'</p></section>'
+        for entry in rows:
+            release,context,decision=entry['release'],entry['context'],entry['decision']
+            app={'orders-api':'Orders API','orders-worker':'Orders Worker'}[release['service']]
+            identity=context.get('rcl_id') or 'GLPI '+str(context.get('change_id','—'))
+            version=context.get('application_version') or release['commit'][:12]
+            phase='Análise necessária' if context.get('reconciliation_required') else PHASE.get('DECISION_RECORDED' if context.get('phase')=='HUMAN_REVIEW' and decision is not None else context.get('phase'),'Em análise')
+            out+='<article class="card entry"><h2>'+esc(identity+' — '+app)+'</h2><p>'+esc(version+' · '+release['environment'].upper())+'</p><span class="badge">Criticidade: '+esc(criticality_label(release,context))+'</span><span class="badge">'+esc(phase)+'</span><p class="approval-mode">'+esc(approval_mode(context,decision))+'</p><a class="button" href="/releases/'+esc(entry['id'])+'">'+('Revisar e decidir' if entry in pending else 'Ver GMUD')+'</a></article>'
+    return out+'<footer>As decisões exigem identidade autenticada. A listagem não aprova ou promove releases.</footer></main></body></html>'
