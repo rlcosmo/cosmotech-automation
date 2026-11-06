@@ -146,11 +146,15 @@ class WorkerCanaryDelivery:
         try:observation=self.observation(state)
         except PermissionError as error:
             self.delivery.state['delivery']['observation_error']=str(error)[:200]
+            self.delivery.state['delivery'].setdefault('observation_errors',[]).append({'at':datetime.now(UTC).isoformat(),'stage':state['stage'],'error':str(error)[:200]})
             self.delivery.save()
             observation={} # Existing controller fails closed and requests drain/rollback.
+        if observation:
+            self.delivery.state['delivery'].pop('observation_error',None)
         state=self.controller.step(self.identity,observation,now=datetime.now(UTC))
         self.executor().apply(self.identity,now=datetime.now(UTC))
         self.delivery.state['delivery']['canary_stage']=state['stage'];self.delivery.save()
+        self.delivery.context(self.rt.changes.read(self.delivery.identity))
         change=self.rt.changes.read(self.delivery.identity)
         if state['stage']=='COMPLETE':
             # Restore source HPA only after all candidate consumers have drained.

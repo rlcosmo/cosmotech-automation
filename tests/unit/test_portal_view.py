@@ -19,3 +19,19 @@ def test_read_only_and_contextual_controls_with_escaped_untrusted_metadata(relea
     assert 'Solicitar rollback' not in render(release,context,'test-csrf',now=now,rollback_pending=True)
     context['rollback_until']=(now-timedelta(seconds=1)).isoformat()
     assert 'Solicitar rollback' not in render(release,context,'test-csrf',now=now)
+
+
+def test_cd_links_and_canary_badge_follow_actual_delivery_strategy(release):
+    now=datetime.now(UTC)
+    context={'phase':'OBSERVING','deployment_strategy':'CANARY','canary_stage':'COMPLETE'}
+    page=render(release,context,'test',now=now)
+    assert 'Acompanhar esteira CD' in page and '/'+release['execution_id']+'"' in page
+    assert 'Canary · concluído' in page.split('</header>')[0]
+    assert 'argocd.cosmotechsolutions.com.br/applications/orders-worker-dev' in page
+    context['deployment_strategy']='ROLLING'
+    assert 'Canary ·' not in render(release,context,'test',now=now)
+    api=release|{'service':'orders-api'}
+    context['deployment_strategy']='CANARY'
+    assert 'Canary ·' not in render(api,context,'test',now=now)
+    bad=release|{'execution_id':'"><script>alert(1)</script>'}
+    assert '<script>alert(1)</script>' not in render(bad,context,'test',now=now)

@@ -20,7 +20,7 @@ def fixture_delivery(release,monkeypatch):
     before=copy.deepcopy(bundle['resources'])
     before['deployment.json']['spec']['template']['spec']['containers'][0]['image']=before['deployment.json']['spec']['template']['spec']['containers'][0]['image'].split('@')[0]+'@'+release['current_digest']
     rt=SimpleNamespace(gate=SimpleNamespace(database=':memory:'),kube=Mock(),config={'cluster':'lab'},changes=Mock(),key=Mock())
-    rt.changes.read.return_value={'rcl_id':'RCL000001'}
+    rt.changes.read.return_value={'rcl_id':'RCL000001','change_id':1}
     delivery=Mock(rt=rt,release=release,identity='signed-change',state={'bundle':bundle,'before_bundle':{'resources':before}})
     delivery.controlled.return_value.publish.return_value='a'*40
     return WorkerCanaryDelivery(delivery),bundle,before
@@ -47,3 +47,27 @@ def test_nonempty_or_dirty_baseline_blocks_before_publisher(release,monkeypatch)
     binding.queue=Mock(return_value={'dlq':1,'visible':0,'inflight':0})
     with pytest.raises(PermissionError):binding.start(bundle,{})
     binding.delivery.controlled.assert_not_called()
+
+
+def test_transient_observation_error_keeps_audit_and_clears_active_error(release,monkeypatch,tmp_path):
+    import json
+    import sqlite3
+    from datetime import UTC, datetime
+
+    binding,_,_=fixture_delivery(release,monkeypatch)
+    database=str(tmp_path/'gate.db');binding.rt.gate.database=database
+    state={'stage':'DRAIN_PROMOTED','entered_at':datetime.now(UTC).isoformat(),'reason':'passed'}
+    with sqlite3.connect(database) as db:
+        db.execute('CREATE TABLE rollouts(id TEXT,state TEXT)')
+        db.execute('INSERT INTO rollouts VALUES (?,?)',(binding.identity,json.dumps(state)))
+    binding.delivery.state['delivery']={}
+    binding.controller=Mock();binding.controller.step.return_value=state
+    binding.executor=Mock()
+    binding.observation=Mock(side_effect=PermissionError('missing fresh pod sample'))
+    binding.tick()
+    assert binding.delivery.state['delivery']['observation_error']=='missing fresh pod sample'
+    assert binding.controller.step.call_args.args[1]=={}
+    binding.observation=Mock(return_value={'verified_fresh_sample':True})
+    binding.tick()
+    assert 'observation_error' not in binding.delivery.state['delivery']
+    assert binding.delivery.state['delivery']['observation_errors'][0]['stage']=='DRAIN_PROMOTED'

@@ -43,7 +43,9 @@ class DeliveryRuntime:
 
     def context(self, change: dict, *, rollback_eligible: bool = False):
         self.rt.portal.register(self.release,None)
-        self.rt.portal.set_context(release_id(self.release),context_for(change,rollback_eligible=rollback_eligible,eligibility_observed_at=datetime.now(UTC).isoformat()))
+        self.rt.portal.set_context(release_id(self.release),context_for(change,rollback_eligible=rollback_eligible,eligibility_observed_at=datetime.now(UTC).isoformat(),
+            deployment_strategy='CANARY' if self.state.get('delivery',{}).get('bootstrap') is False and self.release['service']=='orders-worker' else 'ROLLING',
+            canary_stage=self.state.get('delivery',{}).get('canary_stage')))
 
     def validate(self, expected: str) -> dict:
         snapshot=self.snapshot()

@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import html
+import re
 from datetime import datetime
 
 from automation.promotion_gate import instant
@@ -31,7 +32,7 @@ def render(release: dict, context: dict, csrf: str, *, now: datetime, rollback: 
     candidate=context.get('application_version') or release['commit'][:12]
     def card(title,body,wide=False):return '<section class="card'+(' wide' if wide else '')+'"><h2>'+esc(title)+'</h2>'+body+'</section>'
     out='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+esc(gmud+' — '+app)+'</title><style>'+CSS+'</style></head><body><main>'
-    out+='<header><div class="brand">COSMOTECH SOLUTIONS</div><nav><a href="/releases/">Todas as aprovações</a></nav><h1>'+esc(gmud+' — '+app)+'</h1><p class="criticality">Criticidade da aplicação: <strong>'+esc(criticality_label(release,context))+'</strong></p><p class="approval-mode">'+esc(approval_mode(context))+'</p><p class="version">'+esc(current)+' → '+esc(candidate)+'</p><span class="badge">Ambiente '+esc(release['environment'].upper())+'</span><span class="badge">'+esc(CRITICALITY.get(context.get('criticality'), 'CRÍTICA' if release['service']=='orders-api' else 'NÃO CRÍTICA'))+'</span><span class="badge">'+esc(label)+'</span></header><!--top-actions--><div class="grid">'
+    out+='<header><div class="brand">COSMOTECH SOLUTIONS</div><nav><a href="/releases/">Todas as aprovações</a></nav><h1>'+esc(gmud+' — '+app)+'</h1><p class="criticality">Criticidade da aplicação: <strong>'+esc(criticality_label(release,context))+'</strong></p><p class="approval-mode">'+esc(approval_mode(context))+'</p><p class="version">'+esc(current)+' → '+esc(candidate)+'</p><span class="badge">Ambiente '+esc(release['environment'].upper())+'</span><span class="badge">'+esc(CRITICALITY.get(context.get('criticality'), 'CRÍTICA' if release['service']=='orders-api' else 'NÃO CRÍTICA'))+'</span><span class="badge">'+esc(label)+'</span>'+canary_badge(release,context)+tracking_links(release,context)+'</header><!--top-actions--><div class="grid">'
     out+=card('Identificação da mudança','<dl><dt>GMUD corporativa</dt><dd>'+esc(gmud)+'</dd><dt>Aplicação e versão</dt><dd>'+esc(app+' · '+candidate)+'</dd><dt>Registro nativo GLPI</dt><dd><a href="https://glpi.cosmotechsolutions.com.br/front/change.form.php?id='+esc(context.get('change_id',''))+'">Abrir mudança '+esc(context.get('change_id','—'))+'</a></dd></dl>')
     policy=('Sempre exige aprovação humana autenticada.' if release['service']=='orders-api' else 'Aprovação automática condicionada aos controles técnicos; mudanças sensíveis exigem revisão humana.')
     if context.get('criticality')=='CUSTOM_CRITICAL':policy='Aprovação automática somente após cinco GMUDs reais, válidas e concluídas com sucesso da mesma aplicação e ambiente; caso contrário, revisão humana.'
@@ -109,5 +110,25 @@ def render_index(entries: list[dict]) -> str:
             identity=context.get('rcl_id') or 'GLPI '+str(context.get('change_id','—'))
             version=context.get('application_version') or release['commit'][:12]
             phase='Análise necessária' if context.get('reconciliation_required') else PHASE.get('DECISION_RECORDED' if context.get('phase')=='HUMAN_REVIEW' and decision is not None else context.get('phase'),'Em análise')
-            out+='<article class="card entry"><h2>'+esc(identity+' — '+app)+'</h2><p>'+esc(version+' · '+release['environment'].upper())+'</p><span class="badge">Criticidade: '+esc(criticality_label(release,context))+'</span><span class="badge">'+esc(phase)+'</span><p class="approval-mode">'+esc(approval_mode(context,decision))+'</p><a class="button" href="/releases/'+esc(entry['id'])+'">'+('Revisar e decidir' if entry in pending else 'Ver GMUD')+'</a></article>'
+            out+='<article class="card entry"><h2>'+esc(identity+' — '+app)+'</h2>'+canary_badge(release,context)+'<p>'+esc(version+' · '+release['environment'].upper())+'</p><span class="badge">Criticidade: '+esc(criticality_label(release,context))+'</span><span class="badge">'+esc(phase)+'</span><p class="approval-mode">'+esc(approval_mode(context,decision))+'</p><a class="button" href="/releases/'+esc(entry['id'])+'">'+('Revisar e decidir' if entry in pending else 'Ver GMUD')+'</a>'+tracking_links(release,context)+'</article>'
     return out+'<footer>As decisões exigem identidade autenticada. A listagem não aprova ou promove releases.</footer></main></body></html>'
+
+
+def canary_badge(release: dict, context: dict) -> str:
+    """Label only an observed, protected Worker delivery strategy."""
+    if release['service']!='orders-worker' or context.get('deployment_strategy')!='CANARY':return ''
+    stage=context.get('canary_stage')
+    suffix={'COMPLETE':' · concluído','ROLLED_BACK':' · revertido'}.get(stage,' · em andamento')
+    return '<span class="badge">Canary'+suffix+'</span>'
+
+
+def tracking_links(release: dict, context: dict) -> str:
+    """Construct links exclusively under the fixed CD origins and known app names."""
+    execution=release.get('execution_id','')
+    links=''
+    if re.fullmatch(r'[A-Za-z0-9_-]{1,128}',execution):
+        url='https://kestra.cosmotechsolutions.com.br/ui/executions/main/cosmotech.promotion/promotion_gate/'+execution
+        links+='<a class="button secondary" href="'+url+'">Acompanhar esteira CD</a>'
+    app=release['service']+'-dev'
+    links+='<a class="button secondary" href="https://argocd.cosmotechsolutions.com.br/applications/'+html.escape(app,quote=True)+'">Acompanhar Argo CD</a>'
+    return '<nav aria-label="Acompanhamento CD">'+links+'</nav>'
