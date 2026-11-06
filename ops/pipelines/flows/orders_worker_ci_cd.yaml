@@ -1,7 +1,8 @@
 id: orders_worker_ci_cd
 namespace: cosmotech.clusters.aws_eks_istio_lab_dev
-description: Esteira real de orders-worker para aws-eks-istio-lab-dev. Sem aprovações. Etapas observam resultados reais do
-  GitHub Actions e Argo CD. Logs detalhados pelo link de execução GitHub; falhas não são convertidas em sucesso.
+description: Esteira real de orders-worker para aws-eks-istio-lab-dev. Sem aprovações. Etapas observam resultados
+  reais do GitHub Actions e Argo CD. Logs detalhados pelo link de execução GitHub; falhas não são convertidas em
+  sucesso.
 labels:
   cluster: aws-eks-istio-lab-dev
   environment: dev
@@ -36,19 +37,24 @@ tasks:
     PIPELINE_ATTEMPT: '{{ inputs.run_attempt }}'
     PIPELINE_STAGE: tests
   inputFiles:
-    wait_stage.py: "\"\"\"Observe a real CI stage; never execute or approve a deployment.\"\"\"\nimport json\nimport os\n\
-      import re\nimport time\nimport urllib.request\n\napp = os.environ['PIPELINE_APP']\nrun_id = os.environ['PIPELINE_RUN']\n\
-      attempt = os.environ['PIPELINE_ATTEMPT']\nstage = os.environ['PIPELINE_STAGE']\nassert app in {'orders-api', 'orders-worker',\
-      \ 'gitops'}\nassert re.fullmatch(r'[0-9]+', run_id) and re.fullmatch(r'[0-9]+', attempt)\nassert re.fullmatch(r'[a-z_]+',\
-      \ stage)\nurl = f'http://127.0.0.1:8094/{app}/{run_id}/{attempt}'\nfor _ in range(360):\n    try:\n        with urllib.request.urlopen(url,\
-      \ timeout=5) as response:\n            record = json.load(response)\n    except (OSError, ValueError):\n        time.sleep(5)\n\
-      \        continue\n    current = record.get('stages', {}).get(stage, {})\n    status = current.get('state', 'pending')\n\
-      \    if status == 'success':\n        print(json.dumps({'stage': stage, **current, 'source': record['url'], 'commit':\
-      \ record['sha'], 'cluster': record['cluster']}))\n        break\n    if status in {'failure', 'cancelled', 'skipped'}\
-      \ or record.get('state') in {'failure', 'cancelled'}:\n        print(json.dumps({'stage': stage, 'state': status, 'pipeline_state':\
-      \ record.get('state'), 'source': record.get('url')}))\n        raise SystemExit('Source pipeline did not successfully\
-      \ complete this stage')\n    time.sleep(5)\nelse:\n    raise SystemExit('Timed out waiting for actual CI evidence; no\
-      \ success was fabricated')\n"
+    wait_stage.py: "\"\"\"Observe a real CI stage; never execute or approve a deployment.\"\"\"\nimport json\nimport\
+      \ os\nimport re\nimport time\nimport urllib.request\n\napp = os.environ['PIPELINE_APP']\nrun_id = os.environ['PIPELINE_RUN']\n\
+      attempt = os.environ['PIPELINE_ATTEMPT']\nstage = os.environ['PIPELINE_STAGE']\nassert app in {'orders-api',\
+      \ 'orders-worker', 'gitops'}\nassert re.fullmatch(r'[0-9]+', run_id) and re.fullmatch(r'[0-9]+', attempt)\n\
+      assert re.fullmatch(r'[a-z_]+', stage)\nurl = f'http://127.0.0.1:8094/{app}/{run_id}/{attempt}'\ntimeout =\
+      \ 86400 if app != 'gitops' and stage == 'gitops' else 1800\ndeadline = time.monotonic() + timeout\nlast_state\
+      \ = 'pending'\nwhile time.monotonic() < deadline:\n    try:\n        with urllib.request.urlopen(url, timeout=5)\
+      \ as response:\n            record = json.load(response)\n    except (OSError, ValueError):\n        time.sleep(5)\n\
+      \        continue\n    current = record.get('stages', {}).get(stage, {})\n    status = current.get('state',\
+      \ 'pending')\n    if status != last_state:\n        print(json.dumps({'stage': stage, 'state': status, 'source':\
+      \ record.get('url'), 'release_execution_id': record.get('release_execution_id')}), flush=True)\n        last_state\
+      \ = status\n    if status == 'success':\n        print(json.dumps({'stage': stage, **current, 'source': record['url'],\
+      \ 'commit': record['sha'], 'cluster': record['cluster']}))\n        break\n    if status in {'failure', 'cancelled',\
+      \ 'skipped'} or record.get('state') in {'failure', 'cancelled'}:\n        print(json.dumps({'stage': stage,\
+      \ 'state': status, 'pipeline_state': record.get('state'), 'source': record.get('url')}))\n        raise SystemExit('Source\
+      \ pipeline did not successfully complete this stage')\n    time.sleep(5)\nelse:\n    raise SystemExit(f'Timed\
+      \ out after {timeout}s waiting for {app} run {run_id} attempt {attempt} stage {stage}; last state={last_state}.\
+      \ Check the linked release/approval and evidence service; no success was fabricated')\n"
   commands:
   - python wait_stage.py
 - id: build_scan
@@ -67,19 +73,24 @@ tasks:
     PIPELINE_ATTEMPT: '{{ inputs.run_attempt }}'
     PIPELINE_STAGE: build_scan
   inputFiles:
-    wait_stage.py: "\"\"\"Observe a real CI stage; never execute or approve a deployment.\"\"\"\nimport json\nimport os\n\
-      import re\nimport time\nimport urllib.request\n\napp = os.environ['PIPELINE_APP']\nrun_id = os.environ['PIPELINE_RUN']\n\
-      attempt = os.environ['PIPELINE_ATTEMPT']\nstage = os.environ['PIPELINE_STAGE']\nassert app in {'orders-api', 'orders-worker',\
-      \ 'gitops'}\nassert re.fullmatch(r'[0-9]+', run_id) and re.fullmatch(r'[0-9]+', attempt)\nassert re.fullmatch(r'[a-z_]+',\
-      \ stage)\nurl = f'http://127.0.0.1:8094/{app}/{run_id}/{attempt}'\nfor _ in range(360):\n    try:\n        with urllib.request.urlopen(url,\
-      \ timeout=5) as response:\n            record = json.load(response)\n    except (OSError, ValueError):\n        time.sleep(5)\n\
-      \        continue\n    current = record.get('stages', {}).get(stage, {})\n    status = current.get('state', 'pending')\n\
-      \    if status == 'success':\n        print(json.dumps({'stage': stage, **current, 'source': record['url'], 'commit':\
-      \ record['sha'], 'cluster': record['cluster']}))\n        break\n    if status in {'failure', 'cancelled', 'skipped'}\
-      \ or record.get('state') in {'failure', 'cancelled'}:\n        print(json.dumps({'stage': stage, 'state': status, 'pipeline_state':\
-      \ record.get('state'), 'source': record.get('url')}))\n        raise SystemExit('Source pipeline did not successfully\
-      \ complete this stage')\n    time.sleep(5)\nelse:\n    raise SystemExit('Timed out waiting for actual CI evidence; no\
-      \ success was fabricated')\n"
+    wait_stage.py: "\"\"\"Observe a real CI stage; never execute or approve a deployment.\"\"\"\nimport json\nimport\
+      \ os\nimport re\nimport time\nimport urllib.request\n\napp = os.environ['PIPELINE_APP']\nrun_id = os.environ['PIPELINE_RUN']\n\
+      attempt = os.environ['PIPELINE_ATTEMPT']\nstage = os.environ['PIPELINE_STAGE']\nassert app in {'orders-api',\
+      \ 'orders-worker', 'gitops'}\nassert re.fullmatch(r'[0-9]+', run_id) and re.fullmatch(r'[0-9]+', attempt)\n\
+      assert re.fullmatch(r'[a-z_]+', stage)\nurl = f'http://127.0.0.1:8094/{app}/{run_id}/{attempt}'\ntimeout =\
+      \ 86400 if app != 'gitops' and stage == 'gitops' else 1800\ndeadline = time.monotonic() + timeout\nlast_state\
+      \ = 'pending'\nwhile time.monotonic() < deadline:\n    try:\n        with urllib.request.urlopen(url, timeout=5)\
+      \ as response:\n            record = json.load(response)\n    except (OSError, ValueError):\n        time.sleep(5)\n\
+      \        continue\n    current = record.get('stages', {}).get(stage, {})\n    status = current.get('state',\
+      \ 'pending')\n    if status != last_state:\n        print(json.dumps({'stage': stage, 'state': status, 'source':\
+      \ record.get('url'), 'release_execution_id': record.get('release_execution_id')}), flush=True)\n        last_state\
+      \ = status\n    if status == 'success':\n        print(json.dumps({'stage': stage, **current, 'source': record['url'],\
+      \ 'commit': record['sha'], 'cluster': record['cluster']}))\n        break\n    if status in {'failure', 'cancelled',\
+      \ 'skipped'} or record.get('state') in {'failure', 'cancelled'}:\n        print(json.dumps({'stage': stage,\
+      \ 'state': status, 'pipeline_state': record.get('state'), 'source': record.get('url')}))\n        raise SystemExit('Source\
+      \ pipeline did not successfully complete this stage')\n    time.sleep(5)\nelse:\n    raise SystemExit(f'Timed\
+      \ out after {timeout}s waiting for {app} run {run_id} attempt {attempt} stage {stage}; last state={last_state}.\
+      \ Check the linked release/approval and evidence service; no success was fabricated')\n"
   commands:
   - python wait_stage.py
 - id: publish
@@ -98,19 +109,24 @@ tasks:
     PIPELINE_ATTEMPT: '{{ inputs.run_attempt }}'
     PIPELINE_STAGE: publish
   inputFiles:
-    wait_stage.py: "\"\"\"Observe a real CI stage; never execute or approve a deployment.\"\"\"\nimport json\nimport os\n\
-      import re\nimport time\nimport urllib.request\n\napp = os.environ['PIPELINE_APP']\nrun_id = os.environ['PIPELINE_RUN']\n\
-      attempt = os.environ['PIPELINE_ATTEMPT']\nstage = os.environ['PIPELINE_STAGE']\nassert app in {'orders-api', 'orders-worker',\
-      \ 'gitops'}\nassert re.fullmatch(r'[0-9]+', run_id) and re.fullmatch(r'[0-9]+', attempt)\nassert re.fullmatch(r'[a-z_]+',\
-      \ stage)\nurl = f'http://127.0.0.1:8094/{app}/{run_id}/{attempt}'\nfor _ in range(360):\n    try:\n        with urllib.request.urlopen(url,\
-      \ timeout=5) as response:\n            record = json.load(response)\n    except (OSError, ValueError):\n        time.sleep(5)\n\
-      \        continue\n    current = record.get('stages', {}).get(stage, {})\n    status = current.get('state', 'pending')\n\
-      \    if status == 'success':\n        print(json.dumps({'stage': stage, **current, 'source': record['url'], 'commit':\
-      \ record['sha'], 'cluster': record['cluster']}))\n        break\n    if status in {'failure', 'cancelled', 'skipped'}\
-      \ or record.get('state') in {'failure', 'cancelled'}:\n        print(json.dumps({'stage': stage, 'state': status, 'pipeline_state':\
-      \ record.get('state'), 'source': record.get('url')}))\n        raise SystemExit('Source pipeline did not successfully\
-      \ complete this stage')\n    time.sleep(5)\nelse:\n    raise SystemExit('Timed out waiting for actual CI evidence; no\
-      \ success was fabricated')\n"
+    wait_stage.py: "\"\"\"Observe a real CI stage; never execute or approve a deployment.\"\"\"\nimport json\nimport\
+      \ os\nimport re\nimport time\nimport urllib.request\n\napp = os.environ['PIPELINE_APP']\nrun_id = os.environ['PIPELINE_RUN']\n\
+      attempt = os.environ['PIPELINE_ATTEMPT']\nstage = os.environ['PIPELINE_STAGE']\nassert app in {'orders-api',\
+      \ 'orders-worker', 'gitops'}\nassert re.fullmatch(r'[0-9]+', run_id) and re.fullmatch(r'[0-9]+', attempt)\n\
+      assert re.fullmatch(r'[a-z_]+', stage)\nurl = f'http://127.0.0.1:8094/{app}/{run_id}/{attempt}'\ntimeout =\
+      \ 86400 if app != 'gitops' and stage == 'gitops' else 1800\ndeadline = time.monotonic() + timeout\nlast_state\
+      \ = 'pending'\nwhile time.monotonic() < deadline:\n    try:\n        with urllib.request.urlopen(url, timeout=5)\
+      \ as response:\n            record = json.load(response)\n    except (OSError, ValueError):\n        time.sleep(5)\n\
+      \        continue\n    current = record.get('stages', {}).get(stage, {})\n    status = current.get('state',\
+      \ 'pending')\n    if status != last_state:\n        print(json.dumps({'stage': stage, 'state': status, 'source':\
+      \ record.get('url'), 'release_execution_id': record.get('release_execution_id')}), flush=True)\n        last_state\
+      \ = status\n    if status == 'success':\n        print(json.dumps({'stage': stage, **current, 'source': record['url'],\
+      \ 'commit': record['sha'], 'cluster': record['cluster']}))\n        break\n    if status in {'failure', 'cancelled',\
+      \ 'skipped'} or record.get('state') in {'failure', 'cancelled'}:\n        print(json.dumps({'stage': stage,\
+      \ 'state': status, 'pipeline_state': record.get('state'), 'source': record.get('url')}))\n        raise SystemExit('Source\
+      \ pipeline did not successfully complete this stage')\n    time.sleep(5)\nelse:\n    raise SystemExit(f'Timed\
+      \ out after {timeout}s waiting for {app} run {run_id} attempt {attempt} stage {stage}; last state={last_state}.\
+      \ Check the linked release/approval and evidence service; no success was fabricated')\n"
   commands:
   - python wait_stage.py
 - id: gitops
@@ -129,19 +145,24 @@ tasks:
     PIPELINE_ATTEMPT: '{{ inputs.run_attempt }}'
     PIPELINE_STAGE: gitops
   inputFiles:
-    wait_stage.py: "\"\"\"Observe a real CI stage; never execute or approve a deployment.\"\"\"\nimport json\nimport os\n\
-      import re\nimport time\nimport urllib.request\n\napp = os.environ['PIPELINE_APP']\nrun_id = os.environ['PIPELINE_RUN']\n\
-      attempt = os.environ['PIPELINE_ATTEMPT']\nstage = os.environ['PIPELINE_STAGE']\nassert app in {'orders-api', 'orders-worker',\
-      \ 'gitops'}\nassert re.fullmatch(r'[0-9]+', run_id) and re.fullmatch(r'[0-9]+', attempt)\nassert re.fullmatch(r'[a-z_]+',\
-      \ stage)\nurl = f'http://127.0.0.1:8094/{app}/{run_id}/{attempt}'\nfor _ in range(360):\n    try:\n        with urllib.request.urlopen(url,\
-      \ timeout=5) as response:\n            record = json.load(response)\n    except (OSError, ValueError):\n        time.sleep(5)\n\
-      \        continue\n    current = record.get('stages', {}).get(stage, {})\n    status = current.get('state', 'pending')\n\
-      \    if status == 'success':\n        print(json.dumps({'stage': stage, **current, 'source': record['url'], 'commit':\
-      \ record['sha'], 'cluster': record['cluster']}))\n        break\n    if status in {'failure', 'cancelled', 'skipped'}\
-      \ or record.get('state') in {'failure', 'cancelled'}:\n        print(json.dumps({'stage': stage, 'state': status, 'pipeline_state':\
-      \ record.get('state'), 'source': record.get('url')}))\n        raise SystemExit('Source pipeline did not successfully\
-      \ complete this stage')\n    time.sleep(5)\nelse:\n    raise SystemExit('Timed out waiting for actual CI evidence; no\
-      \ success was fabricated')\n"
+    wait_stage.py: "\"\"\"Observe a real CI stage; never execute or approve a deployment.\"\"\"\nimport json\nimport\
+      \ os\nimport re\nimport time\nimport urllib.request\n\napp = os.environ['PIPELINE_APP']\nrun_id = os.environ['PIPELINE_RUN']\n\
+      attempt = os.environ['PIPELINE_ATTEMPT']\nstage = os.environ['PIPELINE_STAGE']\nassert app in {'orders-api',\
+      \ 'orders-worker', 'gitops'}\nassert re.fullmatch(r'[0-9]+', run_id) and re.fullmatch(r'[0-9]+', attempt)\n\
+      assert re.fullmatch(r'[a-z_]+', stage)\nurl = f'http://127.0.0.1:8094/{app}/{run_id}/{attempt}'\ntimeout =\
+      \ 86400 if app != 'gitops' and stage == 'gitops' else 1800\ndeadline = time.monotonic() + timeout\nlast_state\
+      \ = 'pending'\nwhile time.monotonic() < deadline:\n    try:\n        with urllib.request.urlopen(url, timeout=5)\
+      \ as response:\n            record = json.load(response)\n    except (OSError, ValueError):\n        time.sleep(5)\n\
+      \        continue\n    current = record.get('stages', {}).get(stage, {})\n    status = current.get('state',\
+      \ 'pending')\n    if status != last_state:\n        print(json.dumps({'stage': stage, 'state': status, 'source':\
+      \ record.get('url'), 'release_execution_id': record.get('release_execution_id')}), flush=True)\n        last_state\
+      \ = status\n    if status == 'success':\n        print(json.dumps({'stage': stage, **current, 'source': record['url'],\
+      \ 'commit': record['sha'], 'cluster': record['cluster']}))\n        break\n    if status in {'failure', 'cancelled',\
+      \ 'skipped'} or record.get('state') in {'failure', 'cancelled'}:\n        print(json.dumps({'stage': stage,\
+      \ 'state': status, 'pipeline_state': record.get('state'), 'source': record.get('url')}))\n        raise SystemExit('Source\
+      \ pipeline did not successfully complete this stage')\n    time.sleep(5)\nelse:\n    raise SystemExit(f'Timed\
+      \ out after {timeout}s waiting for {app} run {run_id} attempt {attempt} stage {stage}; last state={last_state}.\
+      \ Check the linked release/approval and evidence service; no success was fabricated')\n"
   commands:
   - python wait_stage.py
 - id: rollout
@@ -160,19 +181,24 @@ tasks:
     PIPELINE_ATTEMPT: '{{ inputs.run_attempt }}'
     PIPELINE_STAGE: rollout
   inputFiles:
-    wait_stage.py: "\"\"\"Observe a real CI stage; never execute or approve a deployment.\"\"\"\nimport json\nimport os\n\
-      import re\nimport time\nimport urllib.request\n\napp = os.environ['PIPELINE_APP']\nrun_id = os.environ['PIPELINE_RUN']\n\
-      attempt = os.environ['PIPELINE_ATTEMPT']\nstage = os.environ['PIPELINE_STAGE']\nassert app in {'orders-api', 'orders-worker',\
-      \ 'gitops'}\nassert re.fullmatch(r'[0-9]+', run_id) and re.fullmatch(r'[0-9]+', attempt)\nassert re.fullmatch(r'[a-z_]+',\
-      \ stage)\nurl = f'http://127.0.0.1:8094/{app}/{run_id}/{attempt}'\nfor _ in range(360):\n    try:\n        with urllib.request.urlopen(url,\
-      \ timeout=5) as response:\n            record = json.load(response)\n    except (OSError, ValueError):\n        time.sleep(5)\n\
-      \        continue\n    current = record.get('stages', {}).get(stage, {})\n    status = current.get('state', 'pending')\n\
-      \    if status == 'success':\n        print(json.dumps({'stage': stage, **current, 'source': record['url'], 'commit':\
-      \ record['sha'], 'cluster': record['cluster']}))\n        break\n    if status in {'failure', 'cancelled', 'skipped'}\
-      \ or record.get('state') in {'failure', 'cancelled'}:\n        print(json.dumps({'stage': stage, 'state': status, 'pipeline_state':\
-      \ record.get('state'), 'source': record.get('url')}))\n        raise SystemExit('Source pipeline did not successfully\
-      \ complete this stage')\n    time.sleep(5)\nelse:\n    raise SystemExit('Timed out waiting for actual CI evidence; no\
-      \ success was fabricated')\n"
+    wait_stage.py: "\"\"\"Observe a real CI stage; never execute or approve a deployment.\"\"\"\nimport json\nimport\
+      \ os\nimport re\nimport time\nimport urllib.request\n\napp = os.environ['PIPELINE_APP']\nrun_id = os.environ['PIPELINE_RUN']\n\
+      attempt = os.environ['PIPELINE_ATTEMPT']\nstage = os.environ['PIPELINE_STAGE']\nassert app in {'orders-api',\
+      \ 'orders-worker', 'gitops'}\nassert re.fullmatch(r'[0-9]+', run_id) and re.fullmatch(r'[0-9]+', attempt)\n\
+      assert re.fullmatch(r'[a-z_]+', stage)\nurl = f'http://127.0.0.1:8094/{app}/{run_id}/{attempt}'\ntimeout =\
+      \ 86400 if app != 'gitops' and stage == 'gitops' else 1800\ndeadline = time.monotonic() + timeout\nlast_state\
+      \ = 'pending'\nwhile time.monotonic() < deadline:\n    try:\n        with urllib.request.urlopen(url, timeout=5)\
+      \ as response:\n            record = json.load(response)\n    except (OSError, ValueError):\n        time.sleep(5)\n\
+      \        continue\n    current = record.get('stages', {}).get(stage, {})\n    status = current.get('state',\
+      \ 'pending')\n    if status != last_state:\n        print(json.dumps({'stage': stage, 'state': status, 'source':\
+      \ record.get('url'), 'release_execution_id': record.get('release_execution_id')}), flush=True)\n        last_state\
+      \ = status\n    if status == 'success':\n        print(json.dumps({'stage': stage, **current, 'source': record['url'],\
+      \ 'commit': record['sha'], 'cluster': record['cluster']}))\n        break\n    if status in {'failure', 'cancelled',\
+      \ 'skipped'} or record.get('state') in {'failure', 'cancelled'}:\n        print(json.dumps({'stage': stage,\
+      \ 'state': status, 'pipeline_state': record.get('state'), 'source': record.get('url')}))\n        raise SystemExit('Source\
+      \ pipeline did not successfully complete this stage')\n    time.sleep(5)\nelse:\n    raise SystemExit(f'Timed\
+      \ out after {timeout}s waiting for {app} run {run_id} attempt {attempt} stage {stage}; last state={last_state}.\
+      \ Check the linked release/approval and evidence service; no success was fabricated')\n"
   commands:
   - python wait_stage.py
 - id: health
@@ -191,19 +217,24 @@ tasks:
     PIPELINE_ATTEMPT: '{{ inputs.run_attempt }}'
     PIPELINE_STAGE: health
   inputFiles:
-    wait_stage.py: "\"\"\"Observe a real CI stage; never execute or approve a deployment.\"\"\"\nimport json\nimport os\n\
-      import re\nimport time\nimport urllib.request\n\napp = os.environ['PIPELINE_APP']\nrun_id = os.environ['PIPELINE_RUN']\n\
-      attempt = os.environ['PIPELINE_ATTEMPT']\nstage = os.environ['PIPELINE_STAGE']\nassert app in {'orders-api', 'orders-worker',\
-      \ 'gitops'}\nassert re.fullmatch(r'[0-9]+', run_id) and re.fullmatch(r'[0-9]+', attempt)\nassert re.fullmatch(r'[a-z_]+',\
-      \ stage)\nurl = f'http://127.0.0.1:8094/{app}/{run_id}/{attempt}'\nfor _ in range(360):\n    try:\n        with urllib.request.urlopen(url,\
-      \ timeout=5) as response:\n            record = json.load(response)\n    except (OSError, ValueError):\n        time.sleep(5)\n\
-      \        continue\n    current = record.get('stages', {}).get(stage, {})\n    status = current.get('state', 'pending')\n\
-      \    if status == 'success':\n        print(json.dumps({'stage': stage, **current, 'source': record['url'], 'commit':\
-      \ record['sha'], 'cluster': record['cluster']}))\n        break\n    if status in {'failure', 'cancelled', 'skipped'}\
-      \ or record.get('state') in {'failure', 'cancelled'}:\n        print(json.dumps({'stage': stage, 'state': status, 'pipeline_state':\
-      \ record.get('state'), 'source': record.get('url')}))\n        raise SystemExit('Source pipeline did not successfully\
-      \ complete this stage')\n    time.sleep(5)\nelse:\n    raise SystemExit('Timed out waiting for actual CI evidence; no\
-      \ success was fabricated')\n"
+    wait_stage.py: "\"\"\"Observe a real CI stage; never execute or approve a deployment.\"\"\"\nimport json\nimport\
+      \ os\nimport re\nimport time\nimport urllib.request\n\napp = os.environ['PIPELINE_APP']\nrun_id = os.environ['PIPELINE_RUN']\n\
+      attempt = os.environ['PIPELINE_ATTEMPT']\nstage = os.environ['PIPELINE_STAGE']\nassert app in {'orders-api',\
+      \ 'orders-worker', 'gitops'}\nassert re.fullmatch(r'[0-9]+', run_id) and re.fullmatch(r'[0-9]+', attempt)\n\
+      assert re.fullmatch(r'[a-z_]+', stage)\nurl = f'http://127.0.0.1:8094/{app}/{run_id}/{attempt}'\ntimeout =\
+      \ 86400 if app != 'gitops' and stage == 'gitops' else 1800\ndeadline = time.monotonic() + timeout\nlast_state\
+      \ = 'pending'\nwhile time.monotonic() < deadline:\n    try:\n        with urllib.request.urlopen(url, timeout=5)\
+      \ as response:\n            record = json.load(response)\n    except (OSError, ValueError):\n        time.sleep(5)\n\
+      \        continue\n    current = record.get('stages', {}).get(stage, {})\n    status = current.get('state',\
+      \ 'pending')\n    if status != last_state:\n        print(json.dumps({'stage': stage, 'state': status, 'source':\
+      \ record.get('url'), 'release_execution_id': record.get('release_execution_id')}), flush=True)\n        last_state\
+      \ = status\n    if status == 'success':\n        print(json.dumps({'stage': stage, **current, 'source': record['url'],\
+      \ 'commit': record['sha'], 'cluster': record['cluster']}))\n        break\n    if status in {'failure', 'cancelled',\
+      \ 'skipped'} or record.get('state') in {'failure', 'cancelled'}:\n        print(json.dumps({'stage': stage,\
+      \ 'state': status, 'pipeline_state': record.get('state'), 'source': record.get('url')}))\n        raise SystemExit('Source\
+      \ pipeline did not successfully complete this stage')\n    time.sleep(5)\nelse:\n    raise SystemExit(f'Timed\
+      \ out after {timeout}s waiting for {app} run {run_id} attempt {attempt} stage {stage}; last state={last_state}.\
+      \ Check the linked release/approval and evidence service; no success was fabricated')\n"
   commands:
   - python wait_stage.py
 concurrency:

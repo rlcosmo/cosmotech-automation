@@ -34,6 +34,9 @@ class DeliveryRuntime:
 
     def record_stage(self,key,status,result='',evidence=None):
         stage_event(self.state,key,status,result=result,evidence=evidence);self.save()
+        from automation.ci_correlation import delivery_event
+        if self.state.get('bundle',{}).get('ci_attempt'):
+            delivery_event(self.state,key,status)
 
     def controlled(self):
         return ControlledPublisher(self.rt.publisher(),self.rt.changes,self.rt.gate.database,observe=lambda status,result,evidence:self.record_stage('gitops',status,result,evidence))
