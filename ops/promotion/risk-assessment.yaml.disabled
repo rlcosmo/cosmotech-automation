@@ -1,0 +1,56 @@
+# INACTIVE: optional Bedrock is disabled by the current deterministic architecture decision.
+id: promotion_risk_assessment
+namespace: cosmotech.promotion
+disabled: true
+description: INACTIVE. Regional Amazon Nova Micro assessment using runner IAM credentials.
+  Advice only; no publishing authority.
+inputs:
+- id: release
+  type: JSON
+tasks:
+- id: enforcement_preflight
+  type: io.kestra.plugin.scripts.shell.Commands
+  containerImage: '{{ kv(''promotion_runner_image'') }}'
+  env:
+    GATE_READY: '{{ kv(''promotion_gate_ready'') }}'
+  commands:
+  - test "$GATE_READY" = true || { echo "Gate enforcement not approved"; exit 1; }
+- id: sanitize
+  type: io.kestra.plugin.scripts.shell.Commands
+  containerImage: '{{ kv(''promotion_runner_image'') }}'
+  inputFiles:
+    release.json: '{{ inputs.release | json }}'
+  commands:
+  - python -m automation.promotion_cli prepare --release release.json --output ai-input.json
+  outputFiles:
+  - ai-input.json
+- id: risk_advice
+  type: io.kestra.plugin.scripts.shell.Commands
+  timeout: PT45S
+  containerImage: '{{ kv(''promotion_runner_image'') }}'
+  env:
+    BEDROCK_PROMOTION_ENABLED: '{{ kv(''bedrock_promotion_enabled'') }}'
+    AWS_REGION: us-east-1
+  inputFiles:
+    release.json: '{{ inputs.release | json }}'
+  commands:
+  - python -m automation.promotion_cli bedrock --release release.json --output ai.json
+  outputFiles:
+  - ai.json
+- id: deterministic_policy
+  type: io.kestra.plugin.scripts.shell.Commands
+  containerImage: '{{ kv(''promotion_runner_image'') }}'
+  env:
+    TRUSTED_MODEL_VERSION: amazon.nova-micro-v1:0
+  inputFiles:
+    release.json: '{{ inputs.release | json }}'
+    ai.json: '{{ read(outputs.risk_advice.outputFiles[''ai.json'']) }}'
+  commands:
+  - python -m automation.promotion_cli evaluate --require-provider-metadata --release
+    release.json --ai ai.json --output decision.json
+  outputFiles:
+  - decision.json
+- id: keep_advice_non_authoritative
+  type: io.kestra.plugin.core.log.Log
+  message: AI assessment completed. Promotion still requires the independently validated
+    deterministic decision and signed receipt; this flow has no GitOps credentials.

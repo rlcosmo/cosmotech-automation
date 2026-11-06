@@ -1,0 +1,44 @@
+id: promotion_bedrock_probe
+namespace: cosmotech.promotion
+disabled: true
+description: Real role-authenticated connectivity test; never authorizes or publishes a release.
+labels:
+  purpose: deployment-validation
+concurrency:
+  limit: 1
+  behavior: FAIL
+tasks:
+  - id: bedrock_connectivity
+    type: io.kestra.plugin.scripts.python.Commands
+    containerImage: cosmotech-automation-runner:lab-20261104
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      networkMode: host
+      cpu:
+        cpus: '0.25'
+      memory:
+        memory: 256MB
+    timeout: PT60S
+    env:
+      AWS_DEFAULT_REGION: us-east-1
+    inputFiles:
+      probe.py: |
+        import boto3,json
+        from botocore.config import Config
+        from botocore.exceptions import ClientError
+        import os
+        if os.getenv("BEDROCK_PROMOTION_ENABLED", "false") != "true":
+            raise SystemExit("Bedrock is disabled by architecture decision")
+        client=boto3.client('bedrock-runtime',region_name='us-east-1',config=Config(connect_timeout=5,read_timeout=30,retries={'total_max_attempts':1}))
+        try:
+            response=client.converse(modelId='amazon.nova-micro-v1:0',messages=[{'role':'user','content':[{'text':'Connectivity test. Reply only CONNECTIVITY_OK.'}]}],inferenceConfig={'maxTokens':16,'temperature':0})
+            print(json.dumps({'validation_only':True,'promotion_authorized':False,'usage':response.get('usage'),'request_id':response['ResponseMetadata']['RequestId']}))
+        except ClientError as error:
+            print(json.dumps({'validation_only':True,'promotion_authorized':False,'decision':'BLOCK','error_code':error.response['Error']['Code'],'message':error.response['Error']['Message'],'request_id':error.response['ResponseMetadata'].get('RequestId')}))
+            raise SystemExit(1)
+    commands:
+      - python probe.py
+errors:
+  - id: fail_closed
+    type: io.kestra.plugin.core.log.Log
+    message: 'BLOCK: inference unavailable. No release approved, no GitOps writer invoked.'

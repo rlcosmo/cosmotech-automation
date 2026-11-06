@@ -1,0 +1,31 @@
+{
+  "version": "cosmotech-promotion-v2-deterministic",
+  "environment": "dev",
+  "services": {
+    "orders-api": "HIGH",
+    "orders-worker": "MEDIUM"
+  },
+  "api_human_required": true,
+  "worker_automatic_requires_low_risk": true,
+  "enforcement_verified": false,
+  "evidence_max_age_seconds": 900,
+  "receipt_ttl_seconds": 600,
+  "canary": {
+    "worker_only": true,
+    "stable_replicas": 1,
+    "candidate_steps": [
+      1,
+      2
+    ],
+    "observation_seconds": 300,
+    "minimum_candidate_samples": 50,
+    "minimum_stable_samples": 10,
+    "observation_timeout_seconds": 1800,
+    "p95_limit_seconds": 5,
+    "oldest_message_limit_seconds": 120,
+    "max_retry_ratio": 0.1,
+    "lease_seconds": 180
+  },
+  "ai_enabled": false,
+  "ai_required": false
+}
