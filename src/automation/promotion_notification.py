@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from automation.promotion_gate import CRITICALITY, release_id
 
 
-def notification(release: dict, ai: dict | None, *, recipient: str, approval_origin: str) -> EmailMessage:
+def notification(release: dict, ai: dict | None, *, recipient: str, approval_origin: str, change_id: int | None = None) -> EmailMessage:
     """Origin is trusted server configuration, never a caller-controlled URL."""
     url = urlsplit(approval_origin)
     if url.scheme != "https" or not url.hostname or url.username or url.password or url.query or url.fragment:
@@ -18,8 +18,9 @@ def notification(release: dict, ai: dict | None, *, recipient: str, approval_ori
     message = EmailMessage()
     message["To"] = recipient
     message["Subject"] = f"CosmoTech: review {release['service']} / {release['environment']}"
+    change = (f"GMUD GLPI: {change_id}\n" if change_id is not None else "")
     message.set_content(
-        f"Application: {release['service']}\nCriticality: {CRITICALITY[release['service']]}\n"
+        f"{change}Application: {release['service']}\nCriticality: {CRITICALITY[release['service']]}\n"
         f"Environment: {release['environment']}\nCurrent: {release['current_digest']}\n"
         f"Candidate: {release['digest']}\nCommit: {release['commit']}\n"
         f"Tests passed: {release['checks']['tests_passed']}\n"

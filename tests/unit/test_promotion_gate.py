@@ -136,3 +136,12 @@ def test_unauthorized_human_and_other_release_blocked(release, ai, gate):
     record["release_id"] = "f" * 64
     with pytest.raises(PermissionError):
         gate.decide(release, ai, now=NOW, human=record)
+
+
+def test_human_target_identity_survives_fresh_observation_but_receipt_does_not(release, ai, gate):
+    original=release_id(release)
+    receipt=gate.decide(release,ai,now=NOW)
+    refreshed=dict(release, observed_at=(NOW+timedelta(seconds=30)).isoformat())
+    assert release_id(refreshed)==original
+    with pytest.raises(PermissionError):
+        verify_receipt(receipt,gate.key.public_key(),refreshed,now=NOW+timedelta(seconds=30))

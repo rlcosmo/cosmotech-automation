@@ -1,0 +1,41 @@
+id: promotion_reconcile
+namespace: cosmotech.promotion
+description: Persistent minute schedule for real approvals, observations, rollback
+  and 12-hour closure; no temporary sleep process.
+concurrency:
+  limit: 1
+  behavior: FAIL
+tasks:
+- id: reconcile
+  type: io.kestra.plugin.scripts.python.Commands
+  containerImage: cosmotech-automation-runner:lab-20261104
+  taskRunner:
+    type: io.kestra.plugin.scripts.runner.docker.Docker
+    networkMode: host
+    cpu:
+      cpus: '0.25'
+    memory:
+      memory: 256MB
+  timeout: PT5M
+  env:
+    EXECUTION_ID: '{{ execution.id }}'
+    STAGE: tick
+    AWS_DEFAULT_REGION: us-east-1
+    BEDROCK_PROMOTION_ENABLED: 'false'
+  inputFiles:
+    stage.py: "import boto3,json,os,time\nfrom botocore.config import Config\nssm=boto3.client('ssm',region_name='us-east-1',config=Config(connect_timeout=3,read_timeout=15,retries={'total_max_attempts':1}))\n\
+      instance='i-0def4e806c49cf60e'\ncommand=ssm.send_command(DocumentName='CosmoTech-Execute-Promotion-Stage',InstanceIds=[instance],Parameters={'Stage':[os.environ['STAGE']],'ExecutionId':[os.environ['EXECUTION_ID']]})['Command']['CommandId']\n\
+      for attempt in range(115):\n    time.sleep(2)\n    try:\n        result=ssm.get_command_invocation(CommandId=command,InstanceId=instance)\n\
+      \    except ssm.exceptions.InvocationDoesNotExist:\n        continue\n    if\
+      \ result['Status']=='Success':\n        print('::'+json.dumps({'outputs':json.loads(result['StandardOutputContent'])})+'::')\n\
+      \        break\n    if result['Status'] in {'Failed','Cancelled','TimedOut','Cancelling'}:\n\
+      \        raise RuntimeError('Trusted stage failed; inspect private SSM evidence\
+      \ '+command)\nelse:\n    raise TimeoutError('Stage outcome unresolved; do not\
+      \ submit again: '+command)\n"
+  commands:
+  - python stage.py
+triggers:
+- id: every_minute
+  type: io.kestra.plugin.core.trigger.Schedule
+  cron: '*/1 * * * *'
+  timezone: UTC

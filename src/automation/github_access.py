@@ -53,7 +53,12 @@ class GitHubApp:
                 'Content-Type': 'application/json', 'X-GitHub-Api-Version': '2022-11-28'}
 
     def api(self, path):
-        if '..' in path or path.startswith('/'):
+        parsed = urllib.parse.urlsplit(path)
+        decoded = urllib.parse.unquote(parsed.path)
+        if (parsed.scheme or parsed.netloc or parsed.fragment or path.startswith('/')
+                or '%' in decoded or '\\' in decoded
+                or any(part in {'.', '..'} for part in decoded.split('/'))
+                or any(ord(char) < 32 or ord(char) == 127 for char in path)):
             raise ValueError('Invalid relative GitHub API path')
         return self.request('https://api.github.com/repos/rlcosmo/' + self.repository + '/' + path, headers=self.headers())
 

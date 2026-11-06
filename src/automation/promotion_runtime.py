@@ -78,7 +78,7 @@ class SnsApprovalNotifier:
         self.client, self.topic = client, topic_arn
         self.recipient, self.origin = recipient, approval_origin
 
-    def send(self, release: dict, advice: dict | None, *, test_only: bool = False) -> str:
+    def send(self, release: dict, advice: dict | None, *, test_only: bool = False, change_id: int | None = None) -> str:
         pages = self.client.get_paginator("list_subscriptions_by_topic").paginate(TopicArn=self.topic)
         subscriptions = [item for page in pages for item in page.get("Subscriptions", [])]
         if (not subscriptions or any(
@@ -87,7 +87,7 @@ class SnsApprovalNotifier:
                 or item.get("SubscriptionArn") in {None, "PendingConfirmation", "Deleted"}
                 for item in subscriptions)):
             raise PermissionError("SNS topic recipients do not match the authorized notification")
-        email = notification(release, advice, recipient=self.recipient, approval_origin=self.origin)
+        email = notification(release, advice, recipient=self.recipient, approval_origin=self.origin, change_id=change_id)
         if test_only:
             email.replace_header("Subject", "[TESTE SEM DEPLOY] CosmoTech approval portal")
             email.set_content("TESTE OPERACIONAL. Nenhuma imagem sera promovida por esta solicitacao.\n\n" + email.get_content())

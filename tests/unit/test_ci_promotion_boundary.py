@@ -28,10 +28,14 @@ def test_ci_requests_only(service, filename, monkeypatch):
     monkeypatch.setenv('GITHUB_RUN_ATTEMPT', '1')
     image = f'123456789012.dkr.ecr.us-east-1.amazonaws.com/aws-eks-istio-lab-dev-{service}@sha256:' + 'b' * 64
     monkeypatch.setattr('sys.argv', ['request', '--service', service, '--image', image])
-    run = Mock(return_value=Mock(returncode=0, stdout='test-command'))
+    run = Mock(side_effect=[Mock(returncode=0, stdout='test-command'),
+        Mock(returncode=0, stdout=json.dumps({'Status':'Success', 'StandardOutputContent':
+            json.dumps({'kestra_execution_id':'test-execution'})}))])
     monkeypatch.setattr(module.subprocess, 'run', run)
     module.main()
-    command = run.call_args.args[0]
+    assert run.call_count == 2
+    command = run.call_args_list[0].args[0]
+    assert run.call_args_list[1].args[0][:3] == ['aws', 'ssm', 'get-command-invocation']
     assert command[:3] == ['aws', 'ssm', 'send-command']
     parameters = json.loads(command[command.index('--parameters') + 1])
     assert set(parameters) == {'Commit', 'Digest', 'RunId', 'RunAttempt'}

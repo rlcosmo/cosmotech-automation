@@ -43,3 +43,30 @@ def test_email_link_without_credentials_or_other_release_cannot_approve(tmp_path
     path = "/releases/" + app.register(release, ai)
     assert request(app, path, "POST", "csrf=invalid&result=APPROVE")[0].startswith("403")
     assert request(app, "/releases/" + "f" * 64)[0].startswith("404")
+
+
+def test_authenticated_rollback_request_is_separate_bound_and_non_deploying(tmp_path, release):
+    from datetime import timedelta
+
+    release['observed_at']=datetime.now(UTC).isoformat()
+    app=ApprovalPortal(str(tmp_path/'portal.db'),b'x'*32,{'owner'},lambda *args:True,
+                       'https://kestra.example.invalid')
+    identity=app.register(release,None)
+    app.set_context(identity,{'phase':'OBSERVING','change_id':7,
+                             'rollback_until':(datetime.now(UTC)+timedelta(hours=12)).isoformat()})
+    auth='Basic '+base64.b64encode(b'owner:test-only').decode()
+    path='/releases/'+identity+'/rollback'
+    assert request(app,path)[0].startswith('401')
+    code,body=request(app,path,auth=auth)
+    assert code.startswith('200')
+    csrf=re.search(r'name="csrf" value="([^"]+)"',body)[1]
+    data=urllib.parse.urlencode({'csrf':csrf,'result':'APPROVE','reason':'Controlled synthetic test'})
+    assert request(app,path,'POST',data,auth,origin='https://attacker.invalid')[0].startswith('403')
+    assert app.rollback_request(identity) is None
+    assert request(app,path,'POST',data,auth)[0].startswith('200')
+    assert app.rollback_request(identity)['principal']=='owner'
+    assert app.decision(identity) is None
+    assert request(app,path,'POST',data,auth)[0].startswith('409')
+    app.set_context(identity,{'phase':'OBSERVING','change_id':7,
+                             'rollback_until':(datetime.now(UTC)-timedelta(seconds=1)).isoformat()})
+    assert request(app,path,auth=auth)[0].startswith('409')

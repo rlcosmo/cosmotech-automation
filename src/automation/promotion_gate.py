@@ -114,7 +114,11 @@ def validate_release(release: dict, now: datetime) -> None:
 
 
 def release_id(release: dict) -> str:
-    return hashlib.sha256(canonical(release)).hexdigest()
+    # Identity binds the immutable target, not the observation clock. Evidence is
+    # collected again before dispatch; the signed receipt still binds every field.
+    fields = ("service", "environment", "commit", "digest", "current_digest",
+              "manifest_sha256", "run_id", "execution_id")
+    return hashlib.sha256(canonical({key: release[key] for key in fields})).hexdigest()
 
 
 def ai_input(release: dict) -> dict:
@@ -178,17 +182,25 @@ class PromotionGate:
 
     def audit(self, release: dict, now: datetime, decision: str, reason: str) -> None:
         """Record decisions without payloads or credentials, including denied attempts."""
-        identity = release_id(release)
+        try:
+            identity = release_id(release)
+        except (KeyError, TypeError):
+            identity = hashlib.sha256(canonical(release)).hexdigest()
         with sqlite3.connect(self.database) as db:
             db.execute("INSERT INTO gate_events VALUES (?,?,?,?)",
                        (identity, now.isoformat(), decision, reason))
 
     def decide(self, release: dict, ai: dict | None, *, now: datetime,
-               human: dict | None = None, kestra_available: bool = True) -> dict:
+               human: dict | None = None, kestra_available: bool = True,
+               require_human: bool = False) -> dict:
         if not kestra_available:
             self.audit(release, now, "BLOCK", "kestra_unavailable")
             raise PermissionError("Kestra unavailable; no promotion")
         decision, reason = evaluate(release, ai, now=now, ai_enabled=self.ai_enabled)
+        if type(require_human) is not bool:
+            raise PermissionError("Invalid trusted human-review policy")
+        if require_human and decision == "APPROVE":
+            decision, reason = "HUMAN_REVIEW", "protected_criticality_or_history_requires_human"
         self.audit(release, now, decision, reason)
         principal = "policy-engine"
         if decision == "HUMAN_REVIEW":

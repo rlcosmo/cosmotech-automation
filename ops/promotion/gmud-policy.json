@@ -1,0 +1,8 @@
+{
+  "version": "cosmotech-gmud-v1",
+  "applications": {
+    "orders-api/dev": "CRITICAL",
+    "orders-worker/dev": "NON_CRITICAL"
+  },
+  "rollback_hours": 12
+}

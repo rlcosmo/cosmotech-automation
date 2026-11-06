@@ -30,3 +30,12 @@ def ai():
 @pytest.fixture
 def gate(tmp_path):
     return PromotionGate(str(tmp_path / "gate.db"), Ed25519PrivateKey.generate(), {"authorized-owner"}, ai_enabled=True)
+
+
+@pytest.fixture
+def journal(tmp_path):
+    from test_gmud import FakeGLPI, policy
+
+    from automation.gmud import ChangeJournal
+
+    return ChangeJournal(str(tmp_path / "gmud.db"), FakeGLPI(), b"test-only-key-" * 4, policy())

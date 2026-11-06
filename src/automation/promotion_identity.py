@@ -12,11 +12,11 @@ from datetime import datetime, timedelta
 from automation.promotion_gate import canonical, instant, release_id
 
 
-def challenge(release: dict, key: bytes, now: datetime) -> str:
+def challenge(release: dict, key: bytes, now: datetime, *, action: str = "approve") -> str:
     """Token is not a bearer approval: valid Basic identity is also mandatory."""
-    if len(key) < 32:
+    if len(key) < 32 or action not in {"approve", "rollback"}:
         raise ValueError("Dedicated server-side CSRF key required")
-    payload = {"release_id": release_id(release),
+    payload = {"release_id": release_id(release), "action": action,
                "expires_at": (now + timedelta(minutes=10)).isoformat()}
     signature = hmac.new(key, canonical(payload), hashlib.sha256).hexdigest()
     return base64.urlsafe_b64encode(canonical({"payload": payload, "signature": signature})).decode()
@@ -24,7 +24,7 @@ def challenge(release: dict, key: bytes, now: datetime) -> str:
 
 def authenticated_human(release: dict, *, authorization: str, csrf: str, key: bytes,
                         result: str, now: datetime, allowed_principals: set[str],
-                        authenticate: Callable[[str, str], bool]) -> dict:
+                        authenticate: Callable[[str, str], bool], action: str = "approve") -> dict:
     """authenticate must validate credentials against the existing Kestra over TLS.
 
     A web handler must pass the HTTP Authorization header; never accept a principal
@@ -44,7 +44,8 @@ def authenticated_human(release: dict, *, authorization: str, csrf: str, key: by
         if not hmac.compare_digest(envelope["signature"], expected):
             raise ValueError("Invalid challenge signature")
         remaining = instant(payload["expires_at"]) - now
-        if payload["release_id"] != release_id(release) or not timedelta(0) < remaining <= timedelta(minutes=10):
+        if (payload["release_id"] != release_id(release) or payload.get("action") != action
+                or not timedelta(0) < remaining <= timedelta(minutes=10)):
             raise ValueError("Expired or wrong-release challenge")
         if authenticate(username, password) is not True:
             raise ValueError("Kestra authentication failed")

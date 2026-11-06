@@ -65,7 +65,7 @@ def collect(request: dict, *, now: datetime, github, ecr, runtime, workflow_hash
     if not isinstance(changed, list) or len(changed) >= 300:
         raise PermissionError('Source diff is absent or truncated')
     names = {item['filename'] for item in changed}
-    dependencies = not any(name.startswith('requirements') or name.endswith(('poetry.lock', 'uv.lock')) for name in names)
+    dependencies = not any(name.startswith('requirements') or name.endswith(('poetry.lock', 'uv.lock')) or name.rsplit('/',1)[-1].startswith('Dockerfile') for name in names)
     sensitive_source = any(re.search(r'(^|/)(terraform|iam|secrets?|network|\.github)(/|$)', name) for name in names)
     contract = not any(name.startswith(('src/orders/shared/validation', 'src/orders/consumer/')) for name in names)
     if service == 'orders-worker' and 'src/orders/runtime/worker.py' in names:
@@ -79,9 +79,8 @@ def collect(request: dict, *, now: datetime, github, ecr, runtime, workflow_hash
     deployment = after['deployment.json']['spec']['template']['spec']
     container = next(c for c in deployment['containers'] if c['name'] == service)
     container['image'] = image
-    for env in container.get('env', []):
-        if env['name'] == 'RELEASE_VERSION':
-            env['value'] = request['digest']
+    container['env'] = [e for e in container.get('env', []) if e['name'] != 'RELEASE_VERSION'] + [
+        {'name':'RELEASE_VERSION','value':request['digest']}]
     diff = classify_manifests(list(before.values()), list(after.values()))
     release = {key: request[key] for key in ('service', 'environment', 'commit', 'digest', 'run_id', 'execution_id')}
     release.update(current_digest=current_digest, observed_at=now.isoformat(),
@@ -93,4 +92,4 @@ def collect(request: dict, *, now: datetime, github, ecr, runtime, workflow_hash
                            'observability_reliable': live['observability_reliable'],
                            'dependencies_reviewed': dependencies,
                            'sensitive_changes': sensitive_source or diff['sensitive_changes']})
-    return release, {'resources': copy.deepcopy(after)}
+    return release, {'resources': copy.deepcopy(after), 'baseline_commit': baseline}

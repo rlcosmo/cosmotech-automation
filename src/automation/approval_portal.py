@@ -14,7 +14,7 @@ import urllib.parse
 from collections.abc import Callable
 from datetime import UTC, datetime
 
-from automation.promotion_gate import CRITICALITY, release_id
+from automation.promotion_gate import CRITICALITY, instant, release_id
 from automation.promotion_identity import authenticated_human, challenge
 
 
@@ -32,6 +32,8 @@ class ApprovalPortal:
         with sqlite3.connect(database) as db:
             db.execute("CREATE TABLE IF NOT EXISTS approval_requests (id TEXT PRIMARY KEY, release TEXT, advice TEXT)")
             db.execute("CREATE TABLE IF NOT EXISTS human_approvals (id TEXT PRIMARY KEY, decision TEXT)")
+            db.execute("CREATE TABLE IF NOT EXISTS approval_context (id TEXT PRIMARY KEY, context TEXT)")
+            db.execute("CREATE TABLE IF NOT EXISTS portal_rollback_requests (id TEXT PRIMARY KEY, request TEXT)")
 
     def register(self, release: dict, advice: dict | None) -> str:
         """Trusted Kestra service path only; this is not exposed as a web endpoint."""
@@ -47,6 +49,16 @@ class ApprovalPortal:
             row = db.execute("SELECT decision FROM human_approvals WHERE id=?", (identity,)).fetchone()
         return json.loads(row[0]) if row else None
 
+    def set_context(self, identity: str, context: dict) -> None:
+        """Trusted gate writes only public state; this does not authorize rollback."""
+        with sqlite3.connect(self.database) as db:
+            db.execute("INSERT OR REPLACE INTO approval_context VALUES (?,?)", (identity, json.dumps(context)))
+
+    def rollback_request(self, identity: str) -> dict | None:
+        with sqlite3.connect(self.database) as db:
+            row = db.execute("SELECT request FROM portal_rollback_requests WHERE id=?", (identity,)).fetchone()
+        return json.loads(row[0]) if row else None
+
     def __call__(self, environ, start_response):
         def reply(code, body, authenticate=False):
             headers = [("Content-Type", "text/html; charset=utf-8"), ("Cache-Control", "no-store"),
@@ -56,15 +68,20 @@ class ApprovalPortal:
                 headers.append(("WWW-Authenticate", 'Basic realm="CosmoTech approval", charset="UTF-8"'))
             start_response(code, headers)
             return [body.encode()]
-        match = re.fullmatch(r"/releases/([a-f0-9]{64})", environ.get("PATH_INFO", ""))
+        match = re.fullmatch(r"/releases/([a-f0-9]{64})(/rollback)?", environ.get("PATH_INFO", ""))
         if not match:
             return reply("404 Not Found", "Not found")
         identity = match[1]
+        rollback = match[2] is not None
+        action = "rollback" if rollback else "approve"
         with sqlite3.connect(self.database) as db:
             row = db.execute("SELECT release,advice FROM approval_requests WHERE id=?", (identity,)).fetchone()
         if not row:
             return reply("404 Not Found", "Not found")
         release, advice = map(json.loads, row)
+        with sqlite3.connect(self.database) as db:
+            context_row = db.execute("SELECT context FROM approval_context WHERE id=?", (identity,)).fetchone()
+        context = json.loads(context_row[0]) if context_row else {}
         now = datetime.now(UTC)
         authorization = environ.get("HTTP_AUTHORIZATION", "")
         method = environ.get("REQUEST_METHOD")
@@ -72,11 +89,11 @@ class ApprovalPortal:
             return reply("405 Method Not Allowed", "Method not allowed")
         if method == "GET":
             # Authenticate even reads; no public release metadata or token-only approvals.
-            csrf = challenge(release, self.key, now)
+            csrf = challenge(release, self.key, now, action=action)
             try:
                 authenticated_human(release, authorization=authorization, csrf=csrf,
                     key=self.key, result="REJECT", now=now, allowed_principals=self.allowed,
-                    authenticate=self.authenticate)
+                    authenticate=self.authenticate, action=action)
             except (PermissionError, OSError):
                 return reply("401 Unauthorized", "Authentication required", True)
             esc = lambda value: html.escape(str(value), quote=True)
@@ -84,26 +101,57 @@ class ApprovalPortal:
                           if advice is None else
                           "AI advisory: " + advice["recommendation"] + " — " + advice["justification"])
             body = (f"<h1>Review {esc(release['service'])}</h1>"
-                    f"<p>{esc(CRITICALITY[release['service']])} / {esc(release['environment'])}</p>"
+                    f"<p>{esc(context.get('criticality', CRITICALITY[release['service']]))} / {esc(release['environment'])}</p>"
                     f"<p>Commit: {esc(release['commit'])}</p><p>Current: {esc(release['current_digest'])}</p>"
                     f"<p>Candidate: {esc(release['digest'])}</p>"
                     f"<p>{esc(assessment)}</p>"
                     f'<form method="post"><input type="hidden" name="csrf" value="{esc(csrf)}">'
                     '<button name="result" value="APPROVE">Approve this release</button>'
                     '<button name="result" value="REJECT">Reject</button></form>')
+            if context.get('change_id'):
+                body = (f"<p>GMUD GLPI: {esc(context['change_id'])} | State: {esc(context.get('phase'))}</p>"
+                        f'<p><a href="https://glpi.cosmotechsolutions.com.br/front/change.form.php?id={esc(context["change_id"])}">Open native GMUD</a></p>' + body)
+            if not rollback and (context.get('phase') not in {None,'CREATED','HUMAN_REVIEW'} or context.get('decision')=='APPROVE'):
+                body=body[:body.find('<form')]+"<p>No human approval action is pending for this state.</p>"
+                if context.get('phase')=='OBSERVING':
+                    body+=f'<p><a href="/releases/{identity}/rollback">Request controlled rollback</a></p>'
+            if rollback:
+                if (context.get("phase") != "OBSERVING" or not context.get("rollback_until")
+                        or now >= instant(context["rollback_until"])):
+                    return reply("409 Conflict", "Rollback window unavailable. Request a new GMUD or manual analysis.")
+                body = (f"<h1>Request rollback: {esc(release['service'])}</h1>"
+                        f"<p>GMUD {esc(context.get('change_id'))}; deadline {esc(context['rollback_until'])}</p>"
+                        '<p>This records a request. Kestra verifies current version and executes the controlled rollback.</p>'
+                        f'<form method="post"><input type="hidden" name="csrf" value="{esc(csrf)}">'
+                        '<label>Justification <textarea name="reason" minlength="8" maxlength="2000" required></textarea></label>'
+                        '<button name="result" value="APPROVE">Request controlled rollback</button></form>')
             return reply("200 OK", body)
         if environ.get("HTTP_ORIGIN") != self.origin:
             return reply("403 Forbidden", "Invalid request origin")
+        if not rollback and (context.get('phase') not in {None,'CREATED','HUMAN_REVIEW'} or context.get('decision')=='APPROVE'):
+            return reply('409 Conflict','This GMUD has no pending human approval action.')
         try:
             length = int(environ.get("CONTENT_LENGTH") or 0)
             if not 0 < length <= 8192:
                 raise ValueError("Invalid body size")
             fields = urllib.parse.parse_qs(environ["wsgi.input"].read(length).decode(), strict_parsing=True)
-            if set(fields) != {"csrf", "result"} or any(len(v) != 1 for v in fields.values()):
+            if set(fields) != ({"csrf", "result", "reason"} if rollback else {"csrf", "result"}) or any(len(v) != 1 for v in fields.values()):
                 raise ValueError("Invalid decision form")
             record = authenticated_human(release, authorization=authorization, csrf=fields["csrf"][0],
                 key=self.key, result=fields["result"][0], now=now,
-                allowed_principals=self.allowed, authenticate=self.authenticate)
+                allowed_principals=self.allowed, authenticate=self.authenticate, action=action)
+            if rollback:
+                if (fields['result'][0] != 'APPROVE' or not 8 <= len(fields['reason'][0].strip()) <= 2000
+                        or context.get('phase') != 'OBSERVING' or not context.get('rollback_until')
+                        or now >= instant(context['rollback_until'])):
+                    raise PermissionError('Rollback window or justification invalid')
+                record['reason'] = fields['reason'][0].strip()
+                with sqlite3.connect(self.database) as db:
+                    try:
+                        db.execute('INSERT INTO portal_rollback_requests VALUES (?,?)', (identity, json.dumps(record)))
+                    except sqlite3.IntegrityError:
+                        return reply('409 Conflict', 'A rollback request already exists; inspect its status.')
+                return reply('200 OK', 'Rollback requested. Kestra must validate authorization, deadline and current version.')
             with sqlite3.connect(self.database) as db:
                 existing = db.execute("SELECT decision FROM human_approvals WHERE id=?", (identity,)).fetchone()
                 if existing and json.loads(existing[0])["result"] != record["result"]:
