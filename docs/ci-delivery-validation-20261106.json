@@ -1,0 +1,100 @@
+{
+  "recorded_at": "2026-11-06T17:57:38.163559+00:00",
+  "change": "RCL000011",
+  "application": "orders-api",
+  "version": "2.0.5-lab",
+  "phase": "OBSERVING",
+  "observation_until": "2026-11-07T05:54:10.947120+00:00",
+  "fixes": [
+    "Trusted release delivery now updates the matching CI attempt with real publication, Argo and validation outcomes.",
+    "Human approval stage has a bounded 24h observation budget instead of 30min.",
+    "SSM Argo synchronization lock wait increased from 60s to 180s, retaining exclusive reconciliation."
+  ],
+  "github": [
+    {
+      "repository": "cosmotech-automation",
+      "run_id": 42264830102,
+      "attempt": 1,
+      "conclusion": "success",
+      "sha": "0b3c76883d2f4f89fb3073dce29d2981d5e52f08",
+      "url": "https://github.com/rlcosmo/cosmotech-automation/actions/runs/42264830102"
+    },
+    {
+      "repository": "cosmotech-orders-api",
+      "run_id": 42264920969,
+      "attempt": 1,
+      "conclusion": "success",
+      "sha": "8cf95ca042ee90a8c5697603029d0bb8be4eca62",
+      "url": "https://github.com/rlcosmo/cosmotech-orders-api/actions/runs/42264920969"
+    },
+    {
+      "repository": "cosmotech-gitops",
+      "run_id": 42265639063,
+      "attempt": 2,
+      "conclusion": "success",
+      "sha": "5d4c01f9a5f5567c973f01c28f9102436ac9c086",
+      "url": "https://github.com/rlcosmo/cosmotech-gitops/actions/runs/42265639063"
+    },
+    {
+      "repository": "cosmotech-infrastructure-iac",
+      "run_id": 42266058022,
+      "attempt": 1,
+      "conclusion": "success",
+      "sha": "09988a42284515d7589c520f8f0d481ca45e73de",
+      "url": "https://github.com/rlcosmo/cosmotech-infrastructure-iac/actions/runs/42266058022"
+    }
+  ],
+  "kestra": [
+    {
+      "flow": "orders_api_ci_cd",
+      "execution": "2ZmljVYG8nZjJnb8K9blR7",
+      "state": "SUCCESS"
+    },
+    {
+      "flow": "release_pipeline",
+      "execution": "3XbRhKRmp9c3BtCj1yRNGD",
+      "state": "SUCCESS"
+    },
+    {
+      "flow": "gitops_ci_cd",
+      "execution": "17jJgIyIzSX7ucD0RqV0dM",
+      "state": "SUCCESS",
+      "github_attempt": 2
+    }
+  ],
+  "https_smoke": {
+    "/version": {
+      "http": 200,
+      "version": "2.0.5-lab"
+    },
+    "/health/live": {
+      "http": 200,
+      "status": "ready"
+    },
+    "/health/ready": {
+      "http": 200,
+      "status": "ready"
+    }
+  },
+  "local_validation": {
+    "automation_unit_tests": 232,
+    "pipeline_bridge_tests": 9,
+    "api_unit_tests": 69,
+    "ruff": "passed",
+    "embedded_flow_sources": "matched",
+    "sync_shell_syntax": "passed"
+  },
+  "ssm_document": {
+    "name": "CosmoTech-Sync-Orders-GitOps",
+    "previous_version": "3",
+    "active_version": "4",
+    "changes": "Only the embedded synchronization script; no IAM change."
+  },
+  "approval": "Explicitly requested test release; approval recorded through existing authenticated portal with CSRF protection. No direct database decision or manual Kestra resume.",
+  "limitations": [
+    "12h observation not complete.",
+    "GitOps attempt 1 failed from lock contention; attempt 2 succeeded after correction.",
+    "Historical failures preserved.",
+    "No Terraform apply/destroy or new cloud resource."
+  ]
+}
