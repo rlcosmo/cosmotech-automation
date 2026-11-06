@@ -80,3 +80,22 @@ def test_restarted_candidate_cannot_pass_on_reset_counters(release,monkeypatch):
     from datetime import UTC, datetime
     with pytest.raises(PermissionError,match='reiniciou'):
         binding.observation({'stage':'CANARY_2','entered_at':datetime.now(UTC).isoformat()})
+
+
+@pytest.mark.parametrize('stage',['COMPLETE','ROLLED_BACK'])
+def test_terminal_rollout_reconciles_effect_without_querying_removed_pods(release,monkeypatch,tmp_path,stage):
+    import json
+    import sqlite3
+    from datetime import UTC, datetime
+    binding,_,_=fixture_delivery(release,monkeypatch)
+    binding.rt.gate.database=str(tmp_path/'terminal.db')
+    state={'stage':stage,'entered_at':datetime.now(UTC).isoformat(),'reason':'validated_drain'}
+    with sqlite3.connect(binding.rt.gate.database) as db:
+        db.execute('CREATE TABLE rollouts(id TEXT,state TEXT)')
+        db.execute('INSERT INTO rollouts VALUES (?,?)',(binding.identity,json.dumps(state)))
+    binding.rt.changes.read.return_value={'rcl_id':'RCL000001','change_id':1,'phase':'ROLLED_BACK'}
+    binding.delivery.state['delivery']={'capacity_restored':True}
+    binding.controller=Mock();binding.executor=Mock();binding.observation=Mock(side_effect=AssertionError('removed pods must not be queried'))
+    binding.tick()
+    binding.observation.assert_not_called();binding.controller.step.assert_not_called()
+    if stage=='COMPLETE':binding.delivery.observing.assert_called_once()

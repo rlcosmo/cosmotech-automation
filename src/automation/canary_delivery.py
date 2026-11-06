@@ -155,15 +155,16 @@ class WorkerCanaryDelivery:
         elapsed=(datetime.now(UTC)-instant(state['entered_at'])).total_seconds()
         if state['stage'] in {'CANARY_1','CANARY_2'} and elapsed<90:
             return {'gmud_id':state.get('gmud_id'),'canary_stage':state['stage'],'status':'Aguardando inicialização e primeiras coletas','elapsed_seconds':elapsed}
-        try:observation=self.observation(state)
-        except PermissionError as error:
-            self.delivery.state['delivery']['observation_error']=str(error)[:200]
-            self.delivery.state['delivery'].setdefault('observation_errors',[]).append({'at':datetime.now(UTC).isoformat(),'stage':state['stage'],'error':str(error)[:200]})
-            self.delivery.save()
-            observation={} # Existing controller fails closed and requests drain/rollback.
-        if observation:
-            self.delivery.state['delivery'].pop('observation_error',None)
-        state=self.controller.step(self.identity,observation,now=datetime.now(UTC))
+        if state['stage'] not in {'COMPLETE','ROLLED_BACK'}:
+            try:observation=self.observation(state)
+            except PermissionError as error:
+                self.delivery.state['delivery']['observation_error']=str(error)[:200]
+                self.delivery.state['delivery'].setdefault('observation_errors',[]).append({'at':datetime.now(UTC).isoformat(),'stage':state['stage'],'error':str(error)[:200]})
+                self.delivery.save()
+                observation={} # Existing controller fails closed and requests drain/rollback.
+            if observation:
+                self.delivery.state['delivery'].pop('observation_error',None)
+            state=self.controller.step(self.identity,observation,now=datetime.now(UTC))
         self.executor().apply(self.identity,now=datetime.now(UTC))
         self.delivery.state['delivery']['canary_stage']=state['stage'];self.delivery.save()
         self.delivery.context(self.rt.changes.read(self.delivery.identity))

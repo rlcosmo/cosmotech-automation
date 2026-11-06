@@ -108,3 +108,8 @@ de renovação passa de180s a300s; não é renovação cega. Frescor90s, janelas
 limites de backlog/p95, assinatura, digest, exclusividade e expiração/drain
 permanecem exigidos. Referência: documentação Kubernetes ConfigMaps, seção
 Mounted ConfigMaps are updated automatically.
+
+Reconciliação terminal: após COMPLETE/ROLLED_BACK, não consultar novamente pods
+candidatos removidos. Usar o estado persistido de drain validado e a execução
+idempotente dos efeitos; validação da stable/Argo continua obrigatória antes de
+OBSERVING. Isso evita que a ausência esperada de pods reabra erro de métricas.
