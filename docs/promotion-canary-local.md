@@ -87,3 +87,24 @@ sem revisão de capacidade/custo. NLB/CloudTrail fora do escopo.
 Plano e evidências canônicos: /opt/aws-serverless-lab/docs/linkedin-showcase/10-action-plan.md e14-evidence-index.md.
 
 </details>
+
+## Correção após o teste real RCL000005
+
+O teste1.0.3 revelou permissão ausente em ChangeMessageVisibility durante drain;
+a mensagem sem ack ficou sujeita à visibilidade180s, o backlog excedeu120s e a
+promoção foi revertida pelo controlador. A candidata drenou e stable1.0.2/HPA
+foram restaurados. Esse teste não é sucesso.
+
+A correção1.0.4 preserva a mensagem e a drenagem quando a devolução falha, emite
+visibility_errors_total e não reinicia o processo. Poll/visibility errors agora
+bloqueiam qualidade; qualquer reinício da candidata bloqueia a progressão mesmo
+se contadores tiverem zerado. A prova de drain usa somente heartbeat fresco,
+drain/inflight e stable sincronizada, sem exigir janela/amostras de negócio.
+
+Lease do controlador/executor unificada em300s, dentro do teto300s já validado
+pelo consumidor. Isso acomoda aquecimento90s, tick persistente de60s e propagação
+eventual do volume ConfigMap. A interrupção automática de consumo por ausência
+de renovação passa de180s a300s; não é renovação cega. Frescor90s, janelas300s,
+limites de backlog/p95, assinatura, digest, exclusividade e expiração/drain
+permanecem exigidos. Referência: documentação Kubernetes ConfigMaps, seção
+Mounted ConfigMaps are updated automatically.

@@ -14,9 +14,11 @@ from typing import Any
 
 from automation.promotion_gate import instant, release_id, verify_receipt
 
+LEASE_SECONDS = 300  # Existing consumer ceiling; covers warmup plus projected-volume propagation.
+
 REQUIRED = {"version", "sampled_at", "window_seconds", "queue_data_age_seconds",
             "canary_success", "canary_failure", "canary_ack_errors", "canary_retries",
-            "canary_ddb_errors", "stable_success", "stable_failure", "p95_seconds",
+            "canary_ddb_errors", "canary_poll_errors", "canary_visibility_errors", "stable_success", "stable_failure", "p95_seconds",
             "dlq_visible", "queue_visible", "oldest_age_seconds", "available_canary",
             "available_stable", "inflight", "draining", "stable_version", "stable_synced"}
 
@@ -43,7 +45,7 @@ def quality(observation: dict, *, candidate: str, now: datetime, replicas: int,
         if (observation["available_stable"] < 1 or observation["available_canary"] != replicas
                 or observation["stable_synced"] is not True):
             return "ABORT", "worker_unavailable"
-        if any(observation[key] > 0 for key in ["canary_failure", "canary_ack_errors", "canary_ddb_errors", "stable_failure"]):
+        if any(observation[key] > 0 for key in ["canary_failure", "canary_ack_errors", "canary_ddb_errors", "canary_poll_errors", "canary_visibility_errors", "stable_failure"]):
             return "ABORT", "processing_persistence_or_ack_failure"
         if observation["dlq_visible"] > dlq_baseline:
             return "ABORT", "dlq_growth"
@@ -78,7 +80,7 @@ class CanaryController:
                  "stable": release["current_digest"], "candidate": release["digest"],
                  "entered_at": now.isoformat(), "dlq_baseline": dlq_baseline,
                  "reason": "authorized_initial_canary",
-                 "effect": {"mode": "run", "replicas": 1, "expires_at": now.timestamp() + 180}}
+                 "effect": {"mode": "run", "replicas": 1, "expires_at": now.timestamp() + LEASE_SECONDS}}
         try:
             with sqlite3.connect(self.database) as db:
                 db.execute("BEGIN IMMEDIATE")
@@ -167,7 +169,7 @@ class CanaryController:
             state["generation"] += 1
             if state["effect"].get("mode") == "run":
                 # Only a healthy/reviewed progression step can renew consumption.
-                state["effect"]["expires_at"] = now.timestamp() + 180
+                state["effect"]["expires_at"] = now.timestamp() + LEASE_SECONDS
             db.execute("UPDATE rollouts SET state=? WHERE id=?", (json.dumps(state), identity))
             db.execute("INSERT INTO rollout_events VALUES (?,?)", (identity, json.dumps(state)))
             return state

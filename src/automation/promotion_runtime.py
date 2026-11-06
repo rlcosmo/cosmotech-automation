@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any
 
 from automation.promotion_notification import notification
+from automation.worker_canary import LEASE_SECONDS
 
 
 class KestraClient:
@@ -133,7 +134,7 @@ class CanaryExecutor:
         if mode not in {"run", "drain"}:
             raise ValueError("Unknown consumer mode")
         expires = effect.get("expires_at", 0)
-        if mode == "run" and not now.timestamp() < expires <= now.timestamp() + 180:
+        if mode == "run" and not now.timestamp() < expires <= now.timestamp() + LEASE_SECONDS:
             raise PermissionError("Stale consumption lease")
         lease = json.dumps({"data": {"lease.json": json.dumps({"mode": mode, "expires_at": expires})}})
         # Drain is published before any scaling or stable restoration.

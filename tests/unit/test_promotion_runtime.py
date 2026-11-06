@@ -65,7 +65,7 @@ def test_expired_lease_never_starts_consumer(tmp_path, release, ai, gate):
     run = Mock()
     executor = CanaryExecutor(controller.database, "expected-eks", run, Mock(), Mock())
     with pytest.raises(PermissionError):
-        executor.apply(state["id"], now=NOW + timedelta(seconds=181))
+        executor.apply(state["id"], now=NOW + timedelta(seconds=301))
     run.assert_not_called()
 
 

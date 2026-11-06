@@ -9,7 +9,7 @@ from automation.worker_canary import CanaryController, quality
 def observation(release, now, *, replicas=1, **changes):
     value = {"version": release["digest"], "sampled_at": now.isoformat(), "window_seconds": 300,
              "queue_data_age_seconds": 30, "canary_success": 50, "canary_failure": 0,
-             "canary_ack_errors": 0, "canary_retries": 0, "canary_ddb_errors": 0,
+             "canary_poll_errors":0,"canary_visibility_errors":0,"canary_ack_errors": 0, "canary_retries": 0, "canary_ddb_errors": 0,
              "stable_success": 20, "stable_failure": 0, "p95_seconds": 0.3,
              "dlq_visible": 0, "queue_visible": 0, "oldest_age_seconds": 0,
              "available_canary": replicas, "available_stable": 1, "inflight": 0,
@@ -43,7 +43,7 @@ def test_progression_only_changes_worker_after_measured_windows(tmp_path, gate, 
 
 
 @pytest.mark.parametrize("change", [
-    {"canary_failure": 1}, {"canary_ack_errors": 1}, {"canary_ddb_errors": 1},
+    {"canary_poll_errors":1},{"canary_visibility_errors":1},{"canary_failure": 1}, {"canary_ack_errors": 1}, {"canary_ddb_errors": 1},
     {"dlq_visible": 1}, {"p95_seconds": 8}, {"oldest_age_seconds": 200},
     {"queue_data_age_seconds": 181}, {"available_stable": 0}, {"canary_retries": 10},
     {"sampled_at": (NOW - timedelta(minutes=10)).isoformat()}, {"p95_seconds": float("nan")},

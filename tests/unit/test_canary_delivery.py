@@ -71,3 +71,12 @@ def test_transient_observation_error_keeps_audit_and_clears_active_error(release
     binding.tick()
     assert 'observation_error' not in binding.delivery.state['delivery']
     assert binding.delivery.state['delivery']['observation_errors'][0]['stage']=='DRAIN_PROMOTED'
+
+
+def test_restarted_candidate_cannot_pass_on_reset_counters(release,monkeypatch):
+    binding,bundle,_=fixture_delivery(release,monkeypatch)
+    binding.rt.kube.deployment.return_value=bundle['resources']['deployment.json']
+    binding.rt.kube.request.return_value={'items':[{'metadata':{'name':'canary-pod'},'status':{'phase':'Running','containerStatuses':[{'restartCount':1}]}}]}
+    from datetime import UTC, datetime
+    with pytest.raises(PermissionError,match='reiniciou'):
+        binding.observation({'stage':'CANARY_2','entered_at':datetime.now(UTC).isoformat()})

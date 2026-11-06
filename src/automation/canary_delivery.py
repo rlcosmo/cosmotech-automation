@@ -108,10 +108,12 @@ class WorkerCanaryDelivery:
         ss='{channel="stable",version="'+version+'"}'
         pods=self.rt.kube.request('/api/v1/namespaces/orders-worker/pods?labelSelector=app%3Dorders-worker-canary')['items']
         active={p['metadata']['name'] for p in pods if p['status']['phase']=='Running' and not p['metadata'].get('deletionTimestamp')}
+        if state['stage'] in {'CANARY_1','CANARY_2','PROMOTING'} and any(c.get('restartCount',0)>0 for p in pods for c in p['status'].get('containerStatuses',[])+p['status'].get('initContainerStatuses',[])):
+            raise PermissionError('Canary reiniciou; nova release e análise exigidas')
         heartbeats=self.rt.kube.query('cosmotech_worker_heartbeat_timestamp_seconds'+cs)
         observed={r['metric'].get('pod') for r in heartbeats if 0<=time.time()-float(r['value'][1])<=90}
         if not active or active!=observed:raise PermissionError('Métricas frescas não cobrem todos os pods canary')
-        q=self.queue();runtime=self.delivery.snapshot()
+        runtime=self.delivery.snapshot()
         if not runtime['incidents_clear'] or not runtime['observability_reliable']:
             raise PermissionError('Incidente ou observabilidade inválida')
         if not runtime['argo_healthy'] and state['stage'] not in {'DRAIN_PROMOTED','DRAIN_ROLLBACK'}:
@@ -123,11 +125,20 @@ class WorkerCanaryDelivery:
         inflight=self.rt.kube.query('cosmotech_worker_inflight'+cs)
         if len(draining)!=len(active) or len(inflight)!=len(active):raise PermissionError('Drenagem incompleta')
         drained=all(float(r['value'][1])==1 for r in draining)
+        if state['stage'] in {'DRAIN_PROMOTED','DRAIN_ROLLBACK'}:
+            # Drain proof does not depend on business counters or the quality window.
+            return {'version':self.release['digest'],'sampled_at':now.isoformat(),'draining':drained,
+                    'inflight':sum(float(r['value'][1]) for r in inflight),
+                    'available_stable':stable['status'].get('availableReplicas',0),
+                    'stable_version':version,'stable_synced':runtime['argo_synced']}
+        q=self.queue()
         success=count(cs,'success')
         p95=self.number('histogram_quantile(0.95,sum by(le)(rate(cosmotech_worker_processing_seconds_bucket'+cs+'['+str(window)+'s])))') if success else None
         # No latency observation exists without processed events; never fabricate a value.
         return {'version':self.release['digest'],'sampled_at':now.isoformat(),'window_seconds':window,'queue_data_age_seconds':0,
                 'canary_success':success,'canary_failure':count(cs,'error'),'canary_ack_errors':count(cs,'ack_error'),
+                'canary_poll_errors':self.number('sum(increase(cosmotech_worker_poll_errors_total'+cs+'['+str(window)+'s]))'),
+                'canary_visibility_errors':self.number('sum(increase(cosmotech_worker_visibility_errors_total'+cs+'['+str(window)+'s]))'),
                 'canary_retries':self.number('sum(increase(cosmotech_worker_retries_total'+cs+'['+str(window)+'s]))'),
                 'canary_ddb_errors':self.number('sum(increase(cosmotech_worker_dynamodb_errors_total'+cs+'['+str(window)+'s]))'),
                 'stable_success':count(ss,'success'),'stable_failure':count(ss,'error'),'p95_seconds':p95,
