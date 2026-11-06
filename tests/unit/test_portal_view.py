@@ -35,3 +35,16 @@ def test_cd_links_and_canary_badge_follow_actual_delivery_strategy(release):
     assert 'Canary ·' not in render(api,context,'test',now=now)
     bad=release|{'execution_id':'"><script>alert(1)</script>'}
     assert '<script>alert(1)</script>' not in render(bad,context,'test',now=now)
+
+
+def test_cd_primary_link_stays_in_authenticated_portal_and_native_route_matches_kestra_208(release):
+    import re
+
+    from automation.promotion_gate import release_id
+
+    page=render(release,{'phase':'OBSERVING','kestra_flow_id':'release_pipeline'},'test',now=datetime.now(UTC))
+    primary=re.search(r'href="([^"]+)">Acompanhar esteira CD</a>',page)[1]
+    assert primary=='/releases/'+release_id(release)+'/execution'
+    assert '/ui/main/executions/cosmotech.promotion/release_pipeline/'+release['execution_id'] in page
+    assert '/ui/executions/main/' not in page
+    assert 'Requer a conta administrativa' in page

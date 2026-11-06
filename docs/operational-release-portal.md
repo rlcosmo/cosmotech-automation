@@ -90,3 +90,9 @@ Por decisão explícita do proprietário, o Deployment passa a usar o endereço 
 O publisher transforma somente aliases comprovados por `DescribeImages` em repositórios integralmente `IMMUTABLE`, sem exclusões. Falha de consulta, divergência ou mutabilidade bloqueia a publicação. Adapters internos resolvem referências por tag novamente para preservar comparação de versão, Canary, proteção contra versão substituída e rollback. Histórico sem alias continua aceitando referências fixadas por digest.
 
 A operação restrita `image-reference:tag-only` permite converter uma GMUD em observação sem nova versão nem nova aprovação: aceita somente os Deployments da própria aplicação, o digest já aprovado e a remoção do sufixo. Qualquer alteração adicional é recusada por comparação integral com o GitOps assinado. Não muda a janela de observação, o aprovador ou os estados GLPI. GitOps continua oficial; edição direta no cluster pode ser reconciliada pelo Argo CD.
+
+### Correção de acesso e acompanhamento CD — 06/11/2026
+
+Identidade operacional preferencial: `laboratorio@cosmotechsolutions.com.br`, com a mesma senha e papel do laboratório. O alias anterior permanece válido; decisões históricas não são renomeadas. A conta é autenticada em `/releases/login`, não no formulário administrativo nativo do Kestra OSS.
+
+`Acompanhar esteira CD` abre `/releases/<identidade>/execution`, protegido pela mesma autenticação e com etapas, logs e evidências persistidas. O link técnico separado usa a rota real da versão2.0.8: `/ui/main/executions/<namespace>/<flow>/<execution>`. Links históricos com `executions/main` recebem redirecionamento308 no proxy. Um HTTP200 no shell SPA não comprova que a rota é válida; o padrão foi conferido em `ui/src/components/executions/executionTabs.ts` da tag oficial v2.0.8. Nenhuma alteração no frontend interno do Kestra.

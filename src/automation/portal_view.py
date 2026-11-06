@@ -110,7 +110,7 @@ def render_index(entries: list[dict], filters: dict | None = None, ci_entries: l
     pending=[e for e in entries if e['context'].get('phase')=='HUMAN_REVIEW' and e['decision'] is None]
     others=[e for e in entries if e not in pending]
     automatic=sum(any(x['type']=='approved' and x.get('details',{}).get('principal')=='policy-engine' for x in e['context'].get('events') or []) for e in entries)
-    out='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="30"><title>CosmoTech — Central de releases</title><style>'+CSS+'</style></head><body><main><header><div class="brand">COSMOTECH SOLUTIONS</div><nav><a href="/releases/login">Entrar como laboratorio</a></nav><h1>Central de releases</h1><p class="muted">Central de aprovações e acompanhamento operacional</p><p>Identifique o que exige sua decisão e acompanhe as aprovações automáticas.</p><div class="summary"><span class="badge">'+str(len(pending))+' pendente(s) de interação humana</span><span class="badge">'+str(automatic)+' aprovação(ões) automática(s) no histórico</span></div></header>'
+    out='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="30"><title>CosmoTech — Central de releases</title><style>'+CSS+'</style></head><body><main><header><div class="brand">COSMOTECH SOLUTIONS</div><nav><a href="/releases/login">Entrar como laboratorio@cosmotechsolutions.com.br</a></nav><h1>Central de releases</h1><p class="muted">Central de aprovações e acompanhamento operacional</p><p>Identifique o que exige sua decisão e acompanhe as aprovações automáticas.</p><div class="summary"><span class="badge">'+str(len(pending))+' pendente(s) de interação humana</span><span class="badge">'+str(automatic)+' aprovação(ões) automática(s) no histórico</span></div></header>'
     if viewer:out+='<p class="muted">Conectado como '+esc(viewer)+'</p>'
     out+=filter_form(filters or {})
     if ci_entries and not any((filters or {}).values()):
@@ -151,12 +151,12 @@ def canary_badge(release: dict, context: dict) -> str:
 def tracking_links(release: dict, context: dict) -> str:
     """Construct links exclusively under the fixed CD origins and known app names."""
     execution=release.get('execution_id','')
-    links='<a class="button secondary" href="/releases/'+release_identity(release)+'/execution">Etapas e evidências do CD</a>'
+    links='<a class="button secondary" href="/releases/'+release_identity(release)+'/execution">Acompanhar esteira CD</a>'
     if re.fullmatch(r'[A-Za-z0-9_-]{1,128}',execution):
         flow=context.get('kestra_flow_id','promotion_gate')
         if flow not in {'promotion_gate','release_pipeline'}:flow='promotion_gate'
-        url='https://kestra.cosmotechsolutions.com.br/ui/executions/main/cosmotech.promotion/'+flow+'/'+execution
-        links+='<a class="button secondary" href="'+url+'">Acompanhar esteira CD</a>'
+        url='https://kestra.cosmotechsolutions.com.br/ui/main/executions/cosmotech.promotion/'+flow+'/'+execution
+        links+='<details><summary>Execução técnica no Kestra</summary><p>Requer a conta administrativa do Kestra. Para acesso operacional, use Acompanhar esteira CD.</p><a class="button secondary" href="'+url+'">Abrir execução no Kestra</a></details>'
     app=release['service']+'-dev'
     links+='<a class="button secondary" href="https://argocd.cosmotechsolutions.com.br/applications/'+html.escape(app,quote=True)+'">Acompanhar Argo CD</a>'
     return '<nav aria-label="Acompanhamento CD">'+links+'</nav>'

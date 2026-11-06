@@ -204,10 +204,12 @@ def test_new_main_flow_is_pinned_and_legacy_or_manual_execution_cannot_authorize
 
 
 def test_operational_login_keeps_admin_and_has_no_decision_side_effect(tmp_path,release):
-    app=ApprovalPortal(str(tmp_path/'portal.db'),b'x'*32,{'admin-test','laboratorio'},lambda *a:True,'https://kestra.example.invalid')
+    app=ApprovalPortal(str(tmp_path/'portal.db'),b'x'*32,{'admin-test','laboratorio','laboratorio@cosmotechsolutions.com.br'},lambda *a:True,'https://kestra.example.invalid')
     identity=app.register(release,None)
     admin='Basic '+base64.b64encode(b'admin-test:isolated').decode()
     operator='Basic '+base64.b64encode(b'laboratorio:isolated').decode()
     assert request(app,'/releases/login',auth=admin)[0].startswith('401')
     assert request(app,'/releases/login',auth=operator)[0].startswith('302')
+    email='Basic '+base64.b64encode(b'laboratorio@cosmotechsolutions.com.br:isolated').decode()
+    assert request(app,'/releases/login',auth=email)[0].startswith('302')
     assert app.decision(identity) is None

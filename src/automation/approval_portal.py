@@ -106,11 +106,11 @@ class ApprovalPortal:
                 raw=environ.get('HTTP_AUTHORIZATION','')
                 username=base64.b64decode(raw[6:],validate=True).decode().split(':',1)[0] if raw.startswith('Basic ') and len(raw)<=4096 else ''
             except (ValueError,UnicodeError):username=''
-            if username=='laboratorio' and self.authenticate_reader(raw):
+            if username in {'laboratorio','laboratorio@cosmotechsolutions.com.br'} and self.authenticate_reader(raw):
                 start_response('302 Found',[('Location','/releases/'),('Cache-Control','no-store'),('Content-Security-Policy',csp())])
                 return [b'']
             start_response('401 Unauthorized',[('Content-Type','text/html; charset=utf-8'),('Cache-Control','no-store'),('Content-Security-Policy',csp()),('WWW-Authenticate','Basic realm="CosmoTech operacional", charset="UTF-8"')])
-            return ['Entre com o usuário laboratorio para acessar o painel operacional.'.encode()]
+            return ['Entre com laboratorio@cosmotechsolutions.com.br e a senha do laboratório para acessar o portal operacional. Esta conta não utiliza o formulário de login nativo do Kestra.'.encode()]
         if environ.get('PATH_INFO')=='/releases/':
             if environ.get('REQUEST_METHOD')!='GET':
                 return reply('405 Method Not Allowed','Método não permitido')

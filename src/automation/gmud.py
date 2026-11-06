@@ -196,7 +196,7 @@ class ChangeJournal:
                   'execution_plan': implementation_plan, 'rollback_plan': rollback_plan,
                   'kestra_execution_id': release['execution_id'],
                   'kestra_flow_id':kestra_flow,
-                  'kestra_url': 'https://kestra.cosmotechsolutions.com.br/ui/executions/main/cosmotech.promotion/'+kestra_flow+'/' + release['execution_id'],
+                  'kestra_url': 'https://kestra.cosmotechsolutions.com.br/ui/main/executions/cosmotech.promotion/'+kestra_flow+'/' + release['execution_id'],
                   'argo_application': release['service'] + '-dev',
                   'synthetic': synthetic, 'phase': 'CREATED', 'outcome': None, 'errors': [],
                   'rollback': False, 'validated_at': None, 'completed_at': None,
