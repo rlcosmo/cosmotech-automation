@@ -1,3 +1,17 @@
+## Atualização06/11/2026 após aprovação do responsável
+
+As GMUDs3/API e4/Worker foram aprovadas por identidade autenticada e implantadas. Kestra SUCCESS na revisão2; GLPI permanece Review8/OBSERVING, sem erros registrados. API usa RollingUpdate; Worker executou o bootstrap rolling de telemetria, explicitamente aprovado. Não existe deployment Canary ativo; a ligação Canary normal permanece pendente. Janela API até20:45:17Z e Worker até20:46:26Z de06/11, sujeita aos controles de continuidade.
+
+Gate atualizado à revisão3 apenas para apresentação: tarefa nativa Labels depois da política, antes da aprovação. Versão é commit12 caracteres, digest completo permanece na evidência. Labels application/version/gmud/release foram aplicados às duas execuções concluídas e lidos de volta, sem executar deploy ou mudar decisão/GMUD. Exemplo: `orders-worker | a9dac69545cd | GMUD 4`. O ID técnico imutável permanece para auditoria. Na lista Executions, habilitar coluna Labels se estiver oculta pela preferência do navegador; filtrar application/gmud. Não se modifica frontend ou ID de execução.
+
+Kestra OSS2.0.8 não persiste dashboards customizados no controller instalado; foi usada a identificação nativa por labels. Não se anuncia dashboard novo ativo. Fluxo revisão3 validado pela API sem warnings/constraints; config protegida fixa revisão3. Scheduler revisão2 e observação das releases revisão2 preservados.155 testes e4 subtestes locais passaram; Ruff passou. Nenhuma nova release foi submetida ou aprovada por esta correção.
+
+Erro inicial15021: uma falha por pod, proxy ainda abrindo listener, não falha contínua das aplicações. Corrigido no injector Istio da infraestrutura, somente novos pods Orders; dois pods reais isolados confirmaram Ready e ausência de Warning/restart. Aplicações aprovadas não reiniciadas.
+
+Registros SSM: aprovação/deploy e observação d49b7dac-43f2-43c4-b59a-63d3a7ee2575; labels/flow revision3 1a75aa4f-3096-40f6-8004-5df38bc64153. Commits GitOps de release:999f4ad946ef4f67bdb05d44bd0a5135e319ddb2 e4de7fac9527fcf27ac127a328032aa05fc0a2838.
+
+## Snapshot anterior preservado
+
 # GLPI GMUD — operação e estado real
 
 Atualização06/11/2026 UTC. Gate Kestra revision2 e scheduler persistente revision2 ativos; GMUD3/API e GMUD4/Worker aguardam humano autenticado. Coleta/política SUCCESS; SNS aceitou as duas notificações, caixa postal não verificada. Actions read resolvido. CI sem chave de escrita GitOps e Argo exige a autoridade GPG exclusiva. Commit assinado de controle não promoveu aplicação.

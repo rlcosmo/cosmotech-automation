@@ -104,7 +104,7 @@ class Runtime:
             state={'release':release,'bundle':bundle,'before_bundle':{'resources':captured['resources']},
                    'before_revision':captured['revision']}
         path.write_text(json.dumps(state));path.chmod(0o600)
-        return {'release_id':release_id(release),'evidence_sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
+        return {'release_id':release_id(release),'version':release['commit'][:12],'evidence_sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
 
     def policy_stage(self, identifier: str) -> dict:
         self.execution(identifier)

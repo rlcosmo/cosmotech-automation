@@ -81,6 +81,14 @@ tasks:
       \ submit again: '+command)\n"
   commands:
   - python stage.py
+- id: release_identity
+  type: io.kestra.plugin.core.execution.Labels
+  labels:
+    application: '{{ inputs.service }}'
+    version: '{{ outputs.verified_evidence.vars.version }}'
+    gmud: '{{ outputs.deterministic_policy.vars.change_id }}'
+    release: '{{ inputs.service }} | {{ outputs.verified_evidence.vars.version }}
+      | GMUD {{ outputs.deterministic_policy.vars.change_id }}'
 - id: human_review
   type: io.kestra.plugin.core.flow.If
   condition: '{{ outputs.deterministic_policy.vars.decision == ''HUMAN_REVIEW'' }}'
