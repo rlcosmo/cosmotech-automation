@@ -27,11 +27,11 @@ READ_RESOURCES = {
 def read_allowed(method: str, path: str, origin: str, trusted_origin: str) -> bool:
     """Reviewed OSS2.0.8 reads, including dashboard queries; all control writes denied."""
     if (len(path) > 8192 or not path.startswith('/api/v1/') or
-            any(x in path for x in ['%', '//', '..', '\\', '?', '#']) or
+            any(x in path for x in ['%', '//', '..', '\\', '?', '#', ';']) or
             any(ord(c) < 32 for c in path)):
         return False
     parts = path.split('/')[3:]
-    if 'webhook' in parts or 'actions' in parts:
+    if any(part.lower() in {'webhook', 'actions'} for part in parts):
         return False  # GET webhooks can execute flows; expressions may invoke functions.
     if method == 'POST':
         return origin == trusted_origin and path == '/api/v1/main/dashboards/charts/preview'

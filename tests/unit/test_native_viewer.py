@@ -77,6 +77,7 @@ def test_native_admin_login_and_logout_preserve_upstream_behavior(fixture):
     ('/api/v1/main/ai/generate','POST'),('/api/v1/main/basicAuth','POST'),
     ('/api/v1/main/flows/../executions/webhook/a/b/c','GET'),
     ('/api/v1/main/flows%2f..%2fexecutions','GET'),
+    ('/api/v1/main/executions/webhook;matrix=1/namespace/flow/key','GET'),
 ])
 def test_viewer_mutation_webhook_and_path_bypass_are_denied(fixture,path,method):
     token,_=login(fixture)
