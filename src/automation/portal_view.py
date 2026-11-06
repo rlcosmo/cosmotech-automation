@@ -156,7 +156,7 @@ def tracking_links(release: dict, context: dict) -> str:
         flow=context.get('kestra_flow_id','promotion_gate')
         if flow not in {'promotion_gate','release_pipeline'}:flow='promotion_gate'
         url='https://kestra.cosmotechsolutions.com.br/ui/main/executions/cosmotech.promotion/'+flow+'/'+execution
-        links+='<details><summary>Execução técnica no Kestra</summary><p>Requer a conta administrativa do Kestra. Para acesso operacional, use Acompanhar esteira CD.</p><a class="button secondary" href="'+url+'">Abrir execução no Kestra</a></details>'
+        links+='<details><summary>Execução técnica no Kestra</summary><p>laboratorio pode consultar a interface nativa. Aprovações e rollback permanecem no portal operacional.</p><a class="button secondary" href="'+url+'">Abrir execução no Kestra</a></details>'
     app=release['service']+'-dev'
     links+='<a class="button secondary" href="https://argocd.cosmotechsolutions.com.br/applications/'+html.escape(app,quote=True)+'">Acompanhar Argo CD</a>'
     return '<nav aria-label="Acompanhamento CD">'+links+'</nav>'

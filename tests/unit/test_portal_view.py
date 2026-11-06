@@ -47,4 +47,4 @@ def test_cd_primary_link_stays_in_authenticated_portal_and_native_route_matches_
     assert primary=='/releases/'+release_id(release)+'/execution'
     assert '/ui/main/executions/cosmotech.promotion/release_pipeline/'+release['execution_id'] in page
     assert '/ui/executions/main/' not in page
-    assert 'Requer a conta administrativa' in page
+    assert 'laboratorio pode consultar a interface nativa' in page
